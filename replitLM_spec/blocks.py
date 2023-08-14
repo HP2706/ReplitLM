@@ -16,6 +16,9 @@ class MPTMLP(nn.Module):
 
     def forward(self, x):
         return self.down_proj(self.act(self.up_proj(x)))
+    
+    def get_linear_layers(self):
+        return [self.up_proj.cpu(), self.down_proj.cpu()]
 
 class MPTBlock(nn.Module):
 
@@ -39,3 +42,10 @@ class MPTBlock(nn.Module):
         n = self.ffn(m)
         x = x + self.resid_ffn_dropout(n)
         return (x, past_key_value)
+    
+    
+    def get_linear_layers(self):
+        linear_layers = []
+        linear_layers.extend(self.attn.get_linear_layers())
+        linear_layers.extend(self.ffn.get_linear_layers())
+        return linear_layers

@@ -3,6 +3,7 @@
 Inspired by https://github.com/karpathy/minGPT/blob/master/mingpt/model.py
 """
 import math
+import numpy as np
 import warnings
 from typing import List, Optional, Tuple, Union
 import torch
@@ -30,6 +31,9 @@ class MPTModel(MPTPreTrainedModel):
     def __init__(self, config: MPTConfig):
         config._validate_config()
         super().__init__(config)
+        self.n_layers = config.n_layers
+        
+        
         self.attn_impl = config.attn_config['attn_impl']
         self.prefix_lm = config.attn_config['prefix_lm']
         self.attn_uses_sequence_id = config.attn_config['attn_uses_sequence_id']
@@ -197,6 +201,280 @@ class MPTModel(MPTPreTrainedModel):
 
     def activation_checkpointing_fn(self, module):
         return isinstance(module, MPTBlock)
+    
+    
+    def get_linear_layers(self):
+        linear_list = [self.l_i]
+        for i in range(self.n_layer):
+            linear_list = [*linear_list, *self.blocks[i].get_linear_layers()]
+        linear_list.append(self.ln_f)
+        linear_list.append(self.l_f)
+        return linear_list
+    
+    
+    def get_cc(self, weight_factor=2.0, bias_penalize=True, ln_penalize=True, no_penalize_last=False):
+        # compute connection cost
+        cc = 0
+        linears = self.get_linear_layers()
+        num_linear = len(linears)
+        for i in range(num_linear):
+            layer = linears[i]
+            if isinstance(layer, nn.LayerNorm):
+                pass
+                #cc += torch.sum(torch.abs(layer.weight)) + torch.sum(torch.abs(layer.bias))
+            else:
+                if i == num_linear - 1 and no_penalize_last:
+                    weight_factor = 0.
+                biolinear = linears[i]
+                dist = torch.abs(biolinear.out_coordinates.unsqueeze(dim=1) - biolinear.in_coordinates.unsqueeze(dim=0))
+                cc += torch.mean(torch.abs(biolinear.linear.weight)*(weight_factor*dist+self.l0))
+                if bias_penalize == True:
+                    cc += torch.mean(torch.abs(biolinear.linear.bias)*(self.l0))
+        return cc
+    
+    def swap_weight(self, weights, j, k, swap_type="out"):
+        with torch.no_grad():  
+            if swap_type == "in":
+                temp = weights[:,j].clone()
+                weights[:,j] = weights[:,k].clone()
+                weights[:,k] = temp
+            elif swap_type == "out":
+                temp = weights[j].clone()
+                weights[j] = weights[k].clone()
+                weights[k] = temp
+            else:
+                raise Exception("Swap type {} is not recognized!".format(swap_type))
+            
+    def swap_bias(self, biases, j, k):
+        with torch.no_grad():  
+            temp = biases[j].clone()
+            biases[j] = biases[k].clone()
+            biases[k] = temp
+    
+    def swap(self, i, j, k):
+        # in the ith layer (of neurons), swap the jth and the kth neuron. 
+        # Note: n layers of weights means n+1 layers of neurons.
+        # (incoming, outgoing) * weights + biases are swapped. 
+        linears = self.get_linear_layers()
+        num_linear = len(linears)
+        if i == 0:
+            left = None
+            right = linears[i]
+            self.swap_bias(self.in_perm, j, k)
+        elif i == num_linear:
+            left = linears[i-1]
+            right = None
+            self.swap_bias(self.out_perm, j, k)
+        else:
+            left = linears[i-1]
+            right = linears[i]
+            
+        
+        if left != None:
+            fold = left.out_fold
+            fold_dim = int(left.linear.weight.shape[0]/fold)
+            for l in range(fold):
+                self.swap_weight(left.linear.weight, j+fold_dim*l, k+fold_dim*l, swap_type="out")
+                self.swap_bias(left.linear.bias, j+fold_dim*l, k+fold_dim*l)
+                
+        if right != None:
+        
+            if i in self.normal_swap:
+                fold = right.in_fold
+                fold_dim = int(right.linear.weight.shape[1]/fold)
+                for l in range(fold):
+                    self.swap_weight(right.linear.weight, j+fold_dim*l, k+fold_dim*l, swap_type="in")
+
+            if i in self.res_swap:
+                rightright = linears[i+1]
+                fold = rightright.in_fold
+                fold_dim = int(rightright.linear.weight.shape[1]/fold)
+                for l in range(fold):
+                    self.swap_bias(right.weight, j+fold_dim*l, k+fold_dim*l)
+                    self.swap_bias(right.bias, j+fold_dim*l, k+fold_dim*l)
+                    self.swap_weight(rightright.linear.weight, j+fold_dim*l, k+fold_dim*l, swap_type="in")
+
+            
+    def get_score(self, i):
+        
+        linears = self.get_linear_layers()
+        num_linear = len(linears)
+        if i == 0:
+            left = None
+            right = linears[i]
+        elif i == num_linear:
+            left = linears[i-1]
+            right = None
+        else:
+            left = linears[i-1]
+            right = linears[i]
+        
+        if isinstance(right, nn.LayerNorm):
+            right = linears[i+1]
+            
+        # need to fold attention, fold = 3
+        score = 0.
+        if left == None:
+            pass
+        else:
+            fold = left.out_fold
+            score +=  torch.mean(torch.sum(torch.abs(left.linear.weight), dim=1).reshape(fold, int(left.linear.weight.shape[0]/fold)), dim=0)
+            
+        if right == None:
+            pass
+        else:
+            fold2 = right.in_fold
+            score += torch.mean(torch.sum(torch.abs(right.linear.weight), dim=0).reshape(fold2, int(right.linear.weight.shape[1]/fold2)), dim=0)
+            
+        return score
+    
+    def get_n_head(self, i):
+        linears = self.get_linear_layers()
+        num_layer = len(linears)
+        if i == 0:
+            n_head = linears[0].in_head
+        else:
+            n_head = linears[i-1].out_head
+        return n_head
+
+    def get_top_id_head(self, i, top_k=20):
+        
+        score = 0.
+        if i == self.res_swap[0]:
+            for p in self.res_swap:
+                score += self.get_score(p)
+        else:
+            score = self.get_score(i)
+            
+        n_head = self.get_n_head(i)
+        score_head = score.reshape(n_head, int(score.shape[0]/n_head))
+        score_head = torch.mean(score_head, dim=1)
+        top_id_head = torch.flip(torch.argsort(score_head),[0])[:top_k]
+        
+        return top_id_head # 1D
+    
+    
+    def get_top_id_tail(self, i, top_k=20):
+        
+        score = 0.
+        if i == self.res_swap[0]:
+            for p in self.res_swap:
+                score += self.get_score(p)
+        else:
+            score = self.get_score(i)
+        
+        n_head = self.get_n_head(i)
+        head_dim = int(score.shape[0]/n_head)
+        score_head = score.reshape(n_head, head_dim)
+        
+        top_id_tail = torch.flip(torch.argsort(score_head, dim=1),[1])[:top_k]
+        
+        return top_id_tail # 2D
+    
+    
+    def relocate_ij_head(self, i, j):
+        # i-th layer, j-th head
+        linears = self.get_linear_layers()
+        num_linear = len(linears)
+        if i < num_linear:
+            if isinstance(linears[i], nn.LayerNorm):
+                num_neuron = int(linears[i+1].linear.weight.shape[1]/linears[i+1].in_fold)
+            else:
+                num_neuron = int(linears[i].linear.weight.shape[1]/linears[i].in_fold)
+        else:
+            num_neuron = linears[i-1].linear.weight.shape[0]
+            
+        ccs = []
+                
+        num_head = self.get_n_head(i)
+        head_dim = int(num_neuron/num_head)
+        
+        for k in range(num_head):
+            if i != self.res_swap[0]:
+                self.swap(i,head_dim*j+np.arange(head_dim),head_dim*k+np.arange(head_dim))
+                
+            ccs.append(self.get_cc())
+            
+            if i != self.res_swap[0]:
+                self.swap(i,head_dim*j+np.arange(head_dim),head_dim*k+np.arange(head_dim))
+                
+        k = torch.argmin(torch.stack(ccs))
+        
+        if i != self.res_swap[0]:
+            self.swap(i,head_dim*j+np.arange(head_dim),head_dim*k+np.arange(head_dim))
+        
+    
+    def relocate_ijk_tail(self, i, j, k):
+        # i-th layer, j-th head, k-th neuron
+        linears = self.get_linear_layers()
+        num_linear = len(linears)
+        if i < num_linear:
+            if isinstance(linears[i], nn.LayerNorm):
+                num_neuron = int(linears[i+1].linear.weight.shape[1]/linears[i+1].in_fold)
+            else:
+                num_neuron = int(linears[i].linear.weight.shape[1]/linears[i].in_fold)
+        else:
+            num_neuron = linears[i-1].linear.weight.shape[0]
+            
+        ccs = []
+        
+        def swap_res(j,k):
+            for p in self.res_swap:
+                self.swap(p,j,k)
+                
+        num_head = self.get_n_head(i)
+        head_dim = int(num_neuron/num_head)
+        
+        for p in range(head_dim):
+            if i == self.res_swap[0]:
+                swap_res(j*head_dim+k,j*head_dim+p)
+            else:
+                self.swap(i,j*head_dim+k,j*head_dim+p)
+                
+            ccs.append(self.get_cc())
+            
+            if i == self.res_swap[0]:
+                swap_res(j*head_dim+k,j*head_dim+p)
+            else:
+                self.swap(i,j*head_dim+k,j*head_dim+p)
+                
+        p = torch.argmin(torch.stack(ccs))
+        
+        if i == self.res_swap[0]:
+                swap_res(j*head_dim+k,j*head_dim+p)
+        else:
+            self.swap(i,j*head_dim+k,j*head_dim+p)
+    
+    def relocate_i(self, i):
+        # skip swap
+        if i in self.skip_swap:
+            return
+        
+        # res swap
+        if i in self.res_swap and i != self.res_swap[0]:
+            return
+            
+        # normal swap + the first res swap
+        top_id_head = self.get_top_id_head(i, top_k=self.top_k)
+        for j in top_id_head:
+            self.relocate_ij_head(i,j)
+            
+        top_id_tail = self.get_top_id_tail(i, top_k=self.top_k)
+        num_head = top_id_tail.shape[0]
+        for j in range(num_head):
+            for k in top_id_tail[j]:
+                self.relocate_ijk_tail(i,j,k)
+            
+    def relocate(self):
+        print('swap')
+        # Relocate neurons in the whole model
+        linears = self.get_linear_layers()
+        num_linear = len(linears)
+        for i in range(num_linear+1):
+            #print(i)
+            self.relocate_i(num_linear-i)
+    
+    
 
 class MPTForCausalLM(MPTPreTrainedModel):
 
@@ -214,6 +492,46 @@ class MPTForCausalLM(MPTPreTrainedModel):
                 else:
                     raise ValueError(f"logit_scale={logit_scale!r} is not recognized as an option; use numeric value or 'inv_sqrt_d_model'.")
             self.logit_scale = logit_scale
+            
+            
+    def get_linear_layers(self):
+        self.transformer.get_linear_layers()
+    
+    def swap_weight(self, weights, j, k, swap_type="out"):
+        self.transformer.swap_weight(weights, j, k, swap_type="out")
+            
+    def swap_bias(self, biases, j, k):
+        self.transformer.swap_bias(biases, j, k)
+    
+    def swap(self, i, j, k):
+        self.transformer.swap(i, j, k)
+        
+    def get_score(self, i):
+        self.transformer.get_score(i)
+        
+    def get_n_head(self, i):
+        self.transformer.get_n_head(i)
+
+    def get_top_id_head(self, i, top_k=20):
+        self.transformer.get_top_id_head(i, top_k = 20)       
+
+    def get_top_id_tail(self, i):
+        self.transformer.get_top_id_tail(i, top_k = 20)
+    
+    def relocate_ij_head(self, i, j):
+        self.transformer.relocate_ij_head(i, j)
+    
+    def relocate_ijk_tail(self, i, j, k):
+        self.transformer.relocate_ijk_tail(i, j, k)
+    
+    def relocate_i(self, i):
+        self.transformer.relocate_i(i)
+        
+    def relocate(self):
+        self.transformer.relocate()
+        
+    def get_cc(self):
+        return self.transformer.get_cc()
 
     def get_input_embeddings(self):
         return self.transformer.wte

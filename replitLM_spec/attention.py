@@ -171,6 +171,9 @@ class MultiheadAttention(nn.Module):
             attn_bias = attn_bias[:, :, -query.size(1):, -key.size(1):]
         (context, attn_weights) = self.attn_fn(query, key, value, self.n_heads, softmax_scale=self.softmax_scale, attn_bias=attn_bias, key_padding_mask=key_padding_mask, is_causal=is_causal, dropout_p=self.attn_dropout_p, training=self.training, needs_weights=needs_weights)
         return (self.out_proj(context), attn_weights, past_key_value)
+    
+    def get_linear_layers(self):
+        return [self.Wqkv, self.out_proj]
 
 class MultiQueryAttention(nn.Module):
     """Multi-Query self attention.
@@ -232,6 +235,10 @@ class MultiQueryAttention(nn.Module):
             attn_bias = attn_bias[:, :, -query.size(1):, -key.size(1):]
         (context, attn_weights) = self.attn_fn(query, key, value, self.n_heads, softmax_scale=self.softmax_scale, attn_bias=attn_bias, key_padding_mask=key_padding_mask, is_causal=is_causal, dropout_p=self.attn_dropout_p, training=self.training, needs_weights=needs_weights, multiquery=True)
         return (self.out_proj(context), attn_weights, past_key_value)
+    
+    def get_linear_layers(self):
+        return [self.Wqkv, self.out_proj]
+
 
 def attn_bias_shape(attn_impl, n_heads, seq_len, alibi, prefix_lm, causal, use_sequence_id):
     if attn_impl == 'flash':
