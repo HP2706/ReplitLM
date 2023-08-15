@@ -27,7 +27,7 @@ def fused_init_helper_(module: nn.Module, init_fn_):
         init_fn_(module.weight[slice_indices])
 
 def generic_param_init_fn_(module: nn.Module, init_fn_, n_layers: int, d_model: Optional[int]=None, init_div_is_residual: Union[int, float, str, bool]=True, emb_init_std: Optional[float]=None, emb_init_uniform_lim: Optional[Union[Tuple[float, float], float]]=None, verbose: int=0, **kwargs):
-    from .modeling_mpt import MPTModel
+    from .modeling_mpt import MPTModel, BioLinear
     del kwargs
     
     print("module-type", type(module))
@@ -50,6 +50,7 @@ def generic_param_init_fn_(module: nn.Module, init_fn_, n_layers: int, d_model: 
             warnings.warn(f'Initializing _is_residual layers then dividing them by {div_is_residual:.3f}. ' + f'Set `init_div_is_residual: false` in init config to disable this.')
     if isinstance(module, nn.Linear):
         if hasattr(module, '_fused'):
+            module = BioLinear.from_linear(module) #CHANGED MIGHT NET REVISITING
             fused_init_helper_(module, init_fn_)
         else:
             init_fn_(module.weight)
@@ -91,7 +92,7 @@ def generic_param_init_fn_(module: nn.Module, init_fn_, n_layers: int, d_model: 
             torch.nn.init.ones_(module.weight)
         if hasattr(module, 'bias') and module.bias is not None:
             torch.nn.init.zeros_(module.bias)
-    elif isinstance(module, nn.MultiheadAttention):
+    elif isinstance(module, nn.MultiheadAttention): #TODO check this
         if module._qkv_same_embed_dim:
             assert module.in_proj_weight is not None
             assert module.q_proj_weight is None and module.k_proj_weight is None and (module.v_proj_weight is None)

@@ -23,12 +23,11 @@ Tokenizer = Union[PreTrainedTokenizer, PreTrainedTokenizerFast]
 
 
 class BioLinear(nn.Module):
-
-    def __init__(self, in_dim, out_dim, in_fold=1, out_fold=1, in_head=1, out_head=1):
+    def __init__(self, in_dim, out_dim, in_fold=1, out_fold=1, in_head=1, out_head=1, device = 'cpu'):
         super(BioLinear, self).__init__()
         self.in_dim = in_dim
         self.out_dim = out_dim
-        self.linear = nn.Linear(in_dim, out_dim, bias = True)
+        self.linear = nn.Linear(in_dim, out_dim, bias = True, device = device)
         self.in_fold = in_fold
         self.out_fold = out_fold
         self.in_head = in_head
@@ -44,6 +43,9 @@ class BioLinear(nn.Module):
     def forward(self, x):
         return self.linear(x)
 
+    def from_linear(layer: nn.Linear, device) -> 'BioLinear':
+        """Creates a BioLinear layer from a linear layer."""
+        return BioLinear(layer.in_features, layer.out_features, in_fold=1, out_fold=1, device= device)
 
 class MPTPreTrainedModel(PreTrainedModel):
     config_class = MPTConfig
@@ -58,6 +60,9 @@ class MPTModel(MPTPreTrainedModel):
         self.n_layers = config.n_layers
         
         #for bimt training
+        self.l_i = self.get_linear_layers()[0]
+        self.l_f = self.get_linear_layers()[-1]
+        
         self.in_dim = config.vocab_size
         self.out_dim = config.vocab_size
         self.n_embed = config.d_model

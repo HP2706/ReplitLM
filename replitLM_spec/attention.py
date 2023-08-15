@@ -120,6 +120,7 @@ class MultiheadAttention(nn.Module):
     """
 
     def __init__(self, d_model: int, n_heads: int, attn_impl: str='triton', clip_qkv: Optional[float]=None, qk_ln: bool=False, softmax_scale: Optional[float]=None, attn_pdrop: float=0.0, low_precision_layernorm: bool=False, verbose: int=0, device: Optional[str]=None):
+        from modeling_mpt import BioLinear
         super().__init__()
         self.attn_impl = attn_impl
         self.clip_qkv = clip_qkv
@@ -130,7 +131,7 @@ class MultiheadAttention(nn.Module):
         if self.softmax_scale is None:
             self.softmax_scale = 1 / math.sqrt(self.d_model / self.n_heads)
         self.attn_dropout_p = attn_pdrop
-        self.Wqkv = nn.Linear(self.d_model, 3 * self.d_model, device=device)
+        self.Wqkv = BioLinear(self.d_model, 3 * self.d_model, device=device) # not sure if this is correct!!!
         fuse_splits = (d_model, 2 * d_model)
         self.Wqkv._fused = (0, fuse_splits)
         if self.qk_ln:
@@ -149,7 +150,7 @@ class MultiheadAttention(nn.Module):
                 warnings.warn('Using `attn_impl: torch`. If your model does not use `alibi` or ' + '`prefix_lm` we recommend using `attn_impl: flash` otherwise ' + 'we recommend using `attn_impl: triton`.')
         else:
             raise ValueError(f'attn_impl={attn_impl!r} is an invalid setting.')
-        self.out_proj = nn.Linear(self.d_model, self.d_model, device=device)
+        self.out_proj = BioLinear(self.d_model, self.d_model, device=device)
         self.out_proj._is_residual = True
 
     def forward(self, x, past_key_value=None, attn_bias=None, attention_mask=None, is_causal=True, needs_weights=False):
@@ -183,6 +184,7 @@ class MultiQueryAttention(nn.Module):
     """
 
     def __init__(self, d_model: int, n_heads: int, attn_impl: str='triton', clip_qkv: Optional[float]=None, qk_ln: bool=False, softmax_scale: Optional[float]=None, attn_pdrop: float=0.0, low_precision_layernorm: bool=False, verbose: int=0, device: Optional[str]=None):
+        from .modeling_mpt import BioLinear
         super().__init__()
         self.attn_impl = attn_impl
         self.clip_qkv = clip_qkv
@@ -194,7 +196,8 @@ class MultiQueryAttention(nn.Module):
         if self.softmax_scale is None:
             self.softmax_scale = 1 / math.sqrt(self.head_dim)
         self.attn_dropout_p = attn_pdrop
-        self.Wqkv = nn.Linear(d_model, d_model + 2 * self.head_dim, device=device)
+        self.Wqkv = BioLinear(d_model, d_model + 2 * self.head_dim, in_head=n_heads, out_head=n_heads, device=device)
+
         fuse_splits = (d_model, d_model + self.head_dim)
         self.Wqkv._fused = (0, fuse_splits)
         if self.qk_ln:
@@ -213,7 +216,7 @@ class MultiQueryAttention(nn.Module):
                 warnings.warn('Using `attn_impl: torch`. If your model does not use `alibi` or ' + '`prefix_lm` we recommend using `attn_impl: flash` otherwise ' + 'we recommend using `attn_impl: triton`.')
         else:
             raise ValueError(f'attn_impl={attn_impl!r} is an invalid setting.')
-        self.out_proj = nn.Linear(self.d_model, self.d_model, device=device)
+        self.out_proj = BioLinear(in_dim=self.d_model, out_dim=self.d_model, device=device)
         self.out_proj._is_residual = True
 
     def forward(self, x, past_key_value=None, attn_bias=None, attention_mask=None, is_causal=True, needs_weights=False):
