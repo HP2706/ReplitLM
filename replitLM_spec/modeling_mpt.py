@@ -247,7 +247,7 @@ class MPTModel(MPTPreTrainedModel):
     
     def get_linear_layers(self):
         linear_list = [self.l_i]
-        for i in range(self.n_layer):
+        for i in range(self.n_layers -1):
             linear_list = [*linear_list, *self.blocks[i].get_linear_layers()]
         linear_list.append(self.ln_f)
         linear_list.append(self.l_f)

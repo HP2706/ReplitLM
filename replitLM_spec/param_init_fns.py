@@ -6,7 +6,7 @@ from typing import Optional, Tuple, Union
 import torch
 from torch import nn
 from .norm import NORM_CLASS_REGISTRY
-from .modeling_mpt import MPTModel
+
 
 def torch_default_param_init_fn_(module: nn.Module, verbose: int=0, **kwargs):
     del kwargs
@@ -27,6 +27,7 @@ def fused_init_helper_(module: nn.Module, init_fn_):
         init_fn_(module.weight[slice_indices])
 
 def generic_param_init_fn_(module: nn.Module, init_fn_, n_layers: int, d_model: Optional[int]=None, init_div_is_residual: Union[int, float, str, bool]=True, emb_init_std: Optional[float]=None, emb_init_uniform_lim: Optional[Union[Tuple[float, float], float]]=None, verbose: int=0, **kwargs):
+    from .modeling_mpt import MPTModel
     del kwargs
     
     print("module-type", type(module))
@@ -117,7 +118,7 @@ def generic_param_init_fn_(module: nn.Module, init_fn_, n_layers: int, d_model: 
                 module.out_proj.weight.div_(div_is_residual)
         if module.out_proj.bias is not None:
             torch.nn.init.zeros_(module.out_proj.bias)
-            
+  
     elif isinstance(module, MPTModel):
         """ for child in module.children():
             generic_param_init_fn_(child, init_fn_, n_layers, d_model, ...)
