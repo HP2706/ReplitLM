@@ -28,7 +28,7 @@ class BioLinear(nn.Module):
         super(BioLinear, self).__init__()
         self.in_dim = in_dim
         self.out_dim = out_dim
-        self.linear = nn.Linear(in_dim, out_dim)
+        self.linear = nn.Linear(in_dim, out_dim, bias = True)
         self.in_fold = in_fold
         self.out_fold = out_fold
         self.in_head = in_head
@@ -61,14 +61,11 @@ class MPTModel(MPTPreTrainedModel):
         self.in_dim = config.vocab_size
         self.out_dim = config.vocab_size
         self.n_embed = config.d_model
-        self.l_i = BioLinear(self.in_dim, self.n_embed)
-        self.l_f = BioLinear(self.n_embed, self.out_dim)
         # parameters for the bio-inspired trick
         self.l0 = 0.5 # distance between two nearby layers
-        #self.in_perm = torch.tensor(np.arange(int(self.in_dim/self.l_i.in_fold)), dtype=torch.long)
         self.in_perm = nn.Parameter(torch.tensor(np.arange(int(self.in_dim/self.l_i.in_fold)), dtype=torch.float))
-        #self.out_perm = torch.tensor(np.arange(int(self.out_dim/self.l_f.out_fold)), dtype=torch.long)
         self.out_perm = nn.Parameter(torch.tensor(np.arange(int(self.out_dim/self.l_f.out_fold)), dtype=torch.float))
+        
         self.top_k = 20
         self.ln_f = nn.LayerNorm(self.n_embed)
         self.res_swap = list(np.arange(2*self.n_layers+1)*3+1)
@@ -246,11 +243,9 @@ class MPTModel(MPTPreTrainedModel):
     
     
     def get_linear_layers(self):
-        linear_list = [self.l_i]
         for i in range(self.n_layers -1):
             linear_list = [*linear_list, *self.blocks[i].get_linear_layers()]
         linear_list.append(self.ln_f)
-        linear_list.append(self.l_f)
         return linear_list
     
     
@@ -268,6 +263,7 @@ class MPTModel(MPTPreTrainedModel):
                 if i == num_linear - 1 and no_penalize_last:
                     weight_factor = 0.
                 biolinear = linears[i]
+                print("layer type", type(biolinear), "is bias none?", biolinear.linear.bias is None)
                 dist = torch.abs(biolinear.out_coordinates.unsqueeze(dim=1) - biolinear.in_coordinates.unsqueeze(dim=0))
                 print("device of torch.mean(torch.abs(biolinear.linear.weight)", torch.mean(torch.abs(biolinear.linear.weight)).device)
                 print("device of (weight_factor*dist+self.l0)", (weight_factor*dist+self.l0).device)
@@ -312,7 +308,6 @@ class MPTModel(MPTPreTrainedModel):
         else:
             left = linears[i-1]
             right = linears[i]
-            
         
         if left != None:
             fold = left.out_fold

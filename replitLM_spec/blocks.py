@@ -18,7 +18,7 @@ class MPTMLP(nn.Module):
         return self.down_proj(self.act(self.up_proj(x)))
     
     def get_linear_layers(self):
-        return [self.up_proj.cpu(), self.down_proj.cpu()]
+        return [self.up_proj, self.down_proj]
 
 class MPTBlock(nn.Module):
 
