@@ -6,6 +6,7 @@ from typing import Optional, Tuple, Union
 import torch
 from torch import nn
 from .norm import NORM_CLASS_REGISTRY
+from .modeling_mpt import MPTModel
 
 def torch_default_param_init_fn_(module: nn.Module, verbose: int=0, **kwargs):
     del kwargs
@@ -116,6 +117,12 @@ def generic_param_init_fn_(module: nn.Module, init_fn_, n_layers: int, d_model: 
                 module.out_proj.weight.div_(div_is_residual)
         if module.out_proj.bias is not None:
             torch.nn.init.zeros_(module.out_proj.bias)
+            
+    elif isinstance(module, MPTModel):
+        """ for child in module.children():
+            generic_param_init_fn_(child, init_fn_, n_layers, d_model, ...)
+        """
+        pass
     else:
         for _ in module.parameters(recurse=False):
             raise NotImplementedError(f'{module.__class__.__name__} parameters are not initialized by param_init_fn.')

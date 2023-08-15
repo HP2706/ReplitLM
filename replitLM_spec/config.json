@@ -30,7 +30,7 @@
     "init_gain": 0,
     "init_nonlinearity": "relu",
     "init_std": 0.02,
-    "name": "baseline_",
+    "name": "kaiming_normal_",
     "verbose": 0
   },
   "init_device": "cpu",
