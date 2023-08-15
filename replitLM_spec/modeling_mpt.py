@@ -11,7 +11,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import PreTrainedModel, PreTrainedTokenizer, PreTrainedTokenizerFast
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
-from .attention import attn_bias_shape, build_attn_bias, Biolinear
+from .attention import attn_bias_shape, build_attn_bias
+from .bio import BioLinear
 from .blocks import MPTBlock
 from .norm import NORM_CLASS_REGISTRY
 from .configuration_mpt import MPTConfig

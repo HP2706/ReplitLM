@@ -4,14 +4,14 @@ import torch
 import torch.nn as nn
 from .attention import ATTN_CLASS_REGISTRY
 from .norm import NORM_CLASS_REGISTRY
-
+from .bio import BioLinear
 class MPTMLP(nn.Module):
 
     def __init__(self, d_model: int, expansion_ratio: int, device: Optional[str]=None):
         super().__init__()
-        self.up_proj = nn.Linear(d_model, expansion_ratio * d_model, device=device)
+        self.up_proj = BioLinear(d_model, expansion_ratio * d_model, device=device)
         self.act = nn.GELU(approximate='none')
-        self.down_proj = nn.Linear(expansion_ratio * d_model, d_model, device=device)
+        self.down_proj = BioLinear(expansion_ratio * d_model, d_model, device=device)
         self.down_proj._is_residual = True
 
     def forward(self, x):
