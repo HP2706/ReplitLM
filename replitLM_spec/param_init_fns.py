@@ -27,6 +27,8 @@ def fused_init_helper_(module: nn.Module, init_fn_):
 
 def generic_param_init_fn_(module: nn.Module, init_fn_, n_layers: int, d_model: Optional[int]=None, init_div_is_residual: Union[int, float, str, bool]=True, emb_init_std: Optional[float]=None, emb_init_uniform_lim: Optional[Union[Tuple[float, float], float]]=None, verbose: int=0, **kwargs):
     del kwargs
+    
+    print("module-type", type(module))
     if verbose > 1:
         warnings.warn(f'If model has bias parameters they are initialized to 0.')
     init_div_is_residual = init_div_is_residual
