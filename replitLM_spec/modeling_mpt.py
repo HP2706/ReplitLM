@@ -56,6 +56,7 @@ class MPTModel(MPTPreTrainedModel):
         
         self.blocks = nn.ModuleList([MPTBlock(device=config.init_device, **config.to_dict()) for _ in range(config.n_layers)])
         #for bimt training
+        self.ln_f = nn.LayerNorm(self.n_embed)
         self.l_i = self.get_linear_layers()[0]
         self.l_f = self.get_linear_layers()[-1]
         
@@ -65,7 +66,6 @@ class MPTModel(MPTPreTrainedModel):
         self.out_perm = nn.Parameter(torch.tensor(np.arange(int(self.out_dim/self.l_f.out_fold)), dtype=torch.float))
         
         self.top_k = 20
-        self.ln_f = nn.LayerNorm(self.n_embed)
         self.res_swap = list(np.arange(2*self.n_layers+1)*3+1)
         self.skip_swap = list(np.arange(2*self.n_layers+1)*3+2)
         self.normal_swap = list(np.arange(2*self.n_layers+2)*3)
