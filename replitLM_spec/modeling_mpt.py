@@ -269,7 +269,9 @@ class MPTModel(MPTPreTrainedModel):
                     weight_factor = 0.
                 biolinear = linears[i]
                 dist = torch.abs(biolinear.out_coordinates.unsqueeze(dim=1) - biolinear.in_coordinates.unsqueeze(dim=0))
-                cc += torch.mean(torch.abs(biolinear.linear.weight)*(weight_factor*dist+self.l0))
+                print("device of torch.mean(torch.abs(biolinear.linear.weight)", torch.mean(torch.abs(biolinear.linear.weight)).device)
+                print("device of (weight_factor*dist+self.l0)", (weight_factor*dist+self.l0).device)
+                cc += torch.mean(torch.abs(biolinear.linear.weight)*(weight_factor*dist+self.l0).to('cuda'))
                 if bias_penalize == True:
                     cc += torch.mean(torch.abs(biolinear.linear.bias)*(self.l0))
         return cc
