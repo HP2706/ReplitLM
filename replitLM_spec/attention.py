@@ -122,7 +122,6 @@ class MultiheadAttention(nn.Module):
     """
 
     def __init__(self, d_model: int, n_heads: int, attn_impl: str='triton', clip_qkv: Optional[float]=None, qk_ln: bool=False, softmax_scale: Optional[float]=None, attn_pdrop: float=0.0, low_precision_layernorm: bool=False, verbose: int=0, device: Optional[str]=None):
-        from modeling_mpt import BioLinear
         super().__init__()
         self.attn_impl = attn_impl
         self.clip_qkv = clip_qkv
