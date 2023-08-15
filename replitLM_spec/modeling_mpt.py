@@ -58,24 +58,10 @@ class MPTModel(MPTPreTrainedModel):
         config._validate_config()
         super().__init__(config)
         self.n_layers = config.n_layers
-        
-        #for bimt training
-        self.l_i = self.get_linear_layers()[0]
-        self.l_f = self.get_linear_layers()[-1]
-        
         self.in_dim = config.vocab_size
         self.out_dim = config.vocab_size
         self.n_embed = config.d_model
-        # parameters for the bio-inspired trick
-        self.l0 = 0.5 # distance between two nearby layers
-        self.in_perm = nn.Parameter(torch.tensor(np.arange(int(self.in_dim/self.l_i.in_fold)), dtype=torch.float))
-        self.out_perm = nn.Parameter(torch.tensor(np.arange(int(self.out_dim/self.l_f.out_fold)), dtype=torch.float))
         
-        self.top_k = 20
-        self.ln_f = nn.LayerNorm(self.n_embed)
-        self.res_swap = list(np.arange(2*self.n_layers+1)*3+1)
-        self.skip_swap = list(np.arange(2*self.n_layers+1)*3+2)
-        self.normal_swap = list(np.arange(2*self.n_layers+2)*3)
         
         self.attn_impl = config.attn_config['attn_impl']
         self.prefix_lm = config.attn_config['prefix_lm']
@@ -91,7 +77,24 @@ class MPTModel(MPTPreTrainedModel):
         if not self.alibi:
             self.wpe = nn.Embedding(config.max_seq_len, config.d_model, device=config.init_device)
         self.emb_drop = nn.Dropout(config.emb_pdrop)
+        
         self.blocks = nn.ModuleList([MPTBlock(device=config.init_device, **config.to_dict()) for _ in range(config.n_layers)])
+        #for bimt training
+        self.l_i = self.get_linear_layers()[0]
+        self.l_f = self.get_linear_layers()[-1]
+        
+        # parameters for the bio-inspired trick
+        self.l0 = 0.5 # distance between two nearby layers
+        self.in_perm = nn.Parameter(torch.tensor(np.arange(int(self.in_dim/self.l_i.in_fold)), dtype=torch.float))
+        self.out_perm = nn.Parameter(torch.tensor(np.arange(int(self.out_dim/self.l_f.out_fold)), dtype=torch.float))
+        
+        self.top_k = 20
+        self.ln_f = nn.LayerNorm(self.n_embed)
+        self.res_swap = list(np.arange(2*self.n_layers+1)*3+1)
+        self.skip_swap = list(np.arange(2*self.n_layers+1)*3+2)
+        self.normal_swap = list(np.arange(2*self.n_layers+2)*3)
+        
+        print("type of self.blocks", type(self.blocks))
         self.norm_f = norm_class(config.d_model, device=config.init_device)
         if config.init_device != 'meta':
             print(f'You are using config.init_device={config.init_device!r}, but you can also use config.init_device="meta" with Composer + FSDP for fast initialization.')
