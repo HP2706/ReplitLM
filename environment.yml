@@ -1,0 +1,23 @@
+name: "replit-prune"
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.8
+  - pip
+
+  - pip:
+    - einops
+    - torch
+    - datasets
+    - transformers
+    - sentencepiece
+    - tqdm
+    - pynvml
+    - google-cloud-sdk
+    - google-auth google-auth-oauthlib google-auth-httplib2
+
+
+

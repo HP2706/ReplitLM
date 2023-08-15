@@ -21,6 +21,30 @@ from .meta_init_context import init_empty_weights
 from .param_init_fns import MODEL_INIT_REGISTRY, generic_param_init_fn_
 Tokenizer = Union[PreTrainedTokenizer, PreTrainedTokenizerFast]
 
+
+class BioLinear(nn.Module):
+
+    def __init__(self, in_dim, out_dim, in_fold=1, out_fold=1, in_head=1, out_head=1):
+        super(BioLinear, self).__init__()
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+        self.linear = nn.Linear(in_dim, out_dim)
+        self.in_fold = in_fold
+        self.out_fold = out_fold
+        self.in_head = in_head
+        self.out_head = out_head
+        assert in_dim % in_fold == 0
+        assert out_dim % out_fold == 0
+        #compute in_cor, shape: (in_dim)
+        in_dim_fold = int(in_dim/in_fold)
+        out_dim_fold = int(out_dim/out_fold)
+        self.in_coordinates = torch.tensor(list(np.linspace(1/(2*in_dim_fold), 1-1/(2*in_dim_fold), num=in_dim_fold))*in_fold, dtype=torch.float)
+        self.out_coordinates = torch.tensor(list(np.linspace(1/(2*out_dim_fold), 1-1/(2*out_dim_fold), num=out_dim_fold))*out_fold, dtype=torch.float)
+        
+    def forward(self, x):
+        return self.linear(x)
+
+
 class MPTPreTrainedModel(PreTrainedModel):
     config_class = MPTConfig
     base_model_prefix = 'model'
@@ -33,6 +57,23 @@ class MPTModel(MPTPreTrainedModel):
         super().__init__(config)
         self.n_layers = config.n_layers
         
+        #for bimt training
+        self.in_dim = config.vocab_size
+        self.out_dim = config.vocab_size
+        self.n_embed = config.d_model
+        self.l_i = BioLinear(self.in_dim, self.n_embed)
+        self.l_f = BioLinear(self.n_embed, self.out_dim)
+        # parameters for the bio-inspired trick
+        self.l0 = 0.5 # distance between two nearby layers
+        #self.in_perm = torch.tensor(np.arange(int(self.in_dim/self.l_i.in_fold)), dtype=torch.long)
+        self.in_perm = nn.Parameter(torch.tensor(np.arange(int(self.in_dim/self.l_i.in_fold)), dtype=torch.float))
+        #self.out_perm = torch.tensor(np.arange(int(self.out_dim/self.l_f.out_fold)), dtype=torch.long)
+        self.out_perm = nn.Parameter(torch.tensor(np.arange(int(self.out_dim/self.l_f.out_fold)), dtype=torch.float))
+        self.top_k = 20
+        
+        self.res_swap = list(np.arange(2*self.n_layers+1)*3+1)
+        self.skip_swap = list(np.arange(2*self.n_layers+1)*3+2)
+        self.normal_swap = list(np.arange(2*self.n_layers+2)*3)
         
         self.attn_impl = config.attn_config['attn_impl']
         self.prefix_lm = config.attn_config['prefix_lm']
