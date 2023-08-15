@@ -6,8 +6,7 @@ from typing import Optional, Tuple, Union
 import torch
 from torch import nn
 from .norm import NORM_CLASS_REGISTRY
-from .attention import BioLinear
-
+from .bio import convert_to_Biolinear
 
 def torch_default_param_init_fn_(module: nn.Module, verbose: int=0, **kwargs):
     del kwargs
@@ -29,7 +28,7 @@ def fused_init_helper_(module: nn.Module, init_fn_):
 
 def generic_param_init_fn_(module: nn.Module, init_fn_, n_layers: int, d_model: Optional[int]=None, init_div_is_residual: Union[int, float, str, bool]=True, emb_init_std: Optional[float]=None, emb_init_uniform_lim: Optional[Union[Tuple[float, float], float]]=None, verbose: int=0, **kwargs):
     del kwargs
-    
+    from .modeling_mpt import MPTModel
     print("module-type", type(module))
     if verbose > 1:
         warnings.warn(f'If model has bias parameters they are initialized to 0.')
@@ -50,7 +49,7 @@ def generic_param_init_fn_(module: nn.Module, init_fn_, n_layers: int, d_model: 
             warnings.warn(f'Initializing _is_residual layers then dividing them by {div_is_residual:.3f}. ' + f'Set `init_div_is_residual: false` in init config to disable this.')
     if isinstance(module, nn.Linear):
         if hasattr(module, '_fused'):
-            module = BioLinear.from_linear(module) #CHANGED MIGHT NET REVISITING
+            module = convert_to_Biolinear(module) #CHANGED MIGHT NET REVISITING
             fused_init_helper_(module, init_fn_)
         else:
             init_fn_(module.weight)

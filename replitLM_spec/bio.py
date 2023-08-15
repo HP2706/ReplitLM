@@ -1,5 +1,6 @@
 import torch 
 import numpy as np
+from torch import nn
 
 class BioLinear(nn.Module):
     def __init__(self, in_dim, out_dim, in_fold=1, out_fold=1, in_head=1, out_head=1, device = 'cpu'):
@@ -22,7 +23,7 @@ class BioLinear(nn.Module):
     def forward(self, x):
         return self.linear(x)
 
-    def from_linear(layer: nn.Linear, device) -> 'BioLinear':
-        """Creates a BioLinear layer from a linear layer."""
-        return BioLinear(layer.in_features, layer.out_features, in_fold=1, out_fold=1, device= device)
+def convert_to_Biolinear(layer: nn.Linear, device):
+    """Creates a BioLinear layer from a linear layer."""
+    return BioLinear(layer.in_features, layer.out_features, in_fold=1, out_fold=1, device= device)
 
