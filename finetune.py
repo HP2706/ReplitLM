@@ -243,9 +243,7 @@ def train(config, train_dataloader, test_dataloader):
         optimizer.zero_grad()
 
         # Forward pass
-        outputs = model(input_ids=token_ids, attention_mask=attention_mask)
-        logits = outputs.logits
-
+        logits, outputs = model(input_ids=token_ids, attention_mask=attention_mask)
         # Compute the loss
         loss_function = torch.nn.CrossEntropyLoss()
         loss = loss_function(logits, token_ids)
