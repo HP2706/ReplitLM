@@ -128,10 +128,18 @@ def create_dataset(config, BATCH_SIZE = 16):
 
 
     tokenizer = AutoTokenizer.from_pretrained("replit/replit-code-v1-3b", trust_remote_code=True)
-    dataset_train = dataset_train_raw.map(encode, batched=True, num_proc=num_workers)
+    if type(dataset_train_raw) == IterableDataset:
+        dataset_train = dataset_train_raw.map(encode, batched=True, num_proc=num_workers)
+        dataset_test = test_dataset_raw.map(encode, batched=True, num_proc=num_workers)
+     
+    else: 
+        print("type of dataset is not iterable", type(dataset_train_raw))
+        dataset_train = dataset_train_raw.map(encode, batched=True)
+        dataset_test = test_dataset_raw.map(encode, batched=True)
+         
     dataset_train = dataset_train.with_format(type='torch')
-    dataset_test = test_dataset_raw.map(encode, batched=True, num_proc=num_workers)
     dataset_test = dataset_test.with_format(type='torch')
+    
     train_dataloader = DataLoader(dataset_train, batch_size=BATCH_SIZE, collate_fn=collate_func, num_workers=num_workers)
     test_dataloader = DataLoader(dataset_test, batch_size=BATCH_SIZE, collate_fn=collate_func, num_workers=num_workers)
     return train_dataloader, test_dataloader
