@@ -22,7 +22,6 @@ from torch.nn.utils.rnn import pad_sequence
 from google.cloud import storage
 from functools import partial
 from io import BytesIO
-
 import wandb
 from torch.utils.data import IterableDataset
 from replitLM_spec.configuration_mpt import MPTConfig
@@ -58,7 +57,7 @@ def upload_blob(model, destination_blob_name, bucket_name='replit-code-bucket'):
 
 def upload_huggingface(model, version:int):
     login(os.environ.get("HUGGINGFACE_API_KEY")) # change this!
-    with Repository("torch-model", clone_from="<user>/torch-model", token=True).commit(commit_message="My cool model :)"):
+    with Repository("replit-code-model", clone_from="<user>/torch-model", token=True).commit(commit_message="My cool model :)"):
         torch.save(model.state_dict(), f"model_{version}.pt")
 
 def gpu_utilization():
@@ -193,10 +192,15 @@ def train(config, train_dataloader, test_dataloader):
     model = MPTModel(mpt_config)
 
     if torch.cuda.is_available():
+        n_gpu = torch.cuda.device_count()
         device = torch.device('cuda')
     else:
-        device = torch.device('cpu')
-        #raise ValueError('No GPU found, please run with --cuda')
+        raise ValueError('No GPU found, please run with --cuda')
+        
+    
+    if n_gpu > 1:
+        model = torch.nn.DataParallel(model)
+    model = model.to(device)
     model.to(device)
     print(model.device)
     print(model.get_cc())
@@ -209,7 +213,7 @@ def train(config, train_dataloader, test_dataloader):
     swap_log = int(1e6) #1000
     plot_log = 1000
     version = 0
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3*n_gpu)
 
     # Create an iterator for the training data
     train_data_iter = iter(train_dataloader)
@@ -297,7 +301,13 @@ def train(config, train_dataloader, test_dataloader):
         if steps% (steps/2):
             upload_blob(model, f"replit/replit-code-v1-3b-sparse_{version}")
             
-
+    if n_gpu > 1:
+        save_model = model.module
+    else:
+        save_model = model
     print("took in total: ", time.time() - t0)
-    model.save_pretrained("replit/replit-code-v1-3b-sparse")
+    save_model.save_pretrained("replit/replit-code-v1-3b-sparse")
+    upload_blob(save_model, f"replit/replit-code-v1-3b-sparse_{version}")
+    upload_huggingface(save_model, version)
+    
 
