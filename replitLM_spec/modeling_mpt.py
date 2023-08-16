@@ -30,7 +30,7 @@ class MPTPreTrainedModel(PreTrainedModel):
 
 class MPTModel(MPTPreTrainedModel):
     def __init__(self, config: MPTConfig):
-        config._validate_config()
+        #config._validate_config()
         super().__init__(config)
         self.n_layers = config.n_layers
         self.in_dim = config.vocab_size
