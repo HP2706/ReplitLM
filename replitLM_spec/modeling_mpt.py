@@ -58,7 +58,7 @@ class MPTModel(MPTPreTrainedModel):
         #for bimt training
         self.ln_f = nn.LayerNorm(self.n_embed)
         self.l_i = self.get_linear_layers()[0]
-        self.l_f = self.get_linear_layers()[-1]
+        self.l_f = self.get_linear_layers()[-2]
         
         # parameters for the bio-inspired trick
         self.l0 = 0.5 # distance between two nearby layers
