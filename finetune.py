@@ -87,8 +87,6 @@ def gpu_utilization():
 #!nvidia-smi
 
 
-with open('replitLM_spec/config2.json', 'r') as f:
-    config = json.load(f)
 #downloading dataset
 
 def encode(x):
@@ -124,8 +122,8 @@ def create_dataset(config, BATCH_SIZE = 16):
     else:
         # small dataset
         num_workers = mp.cpu_count()
-        dataset_train_raw = load_dataset("codeparrot/github-jupyter-code-to-text", split="train", token=token, streaming = True, num_workers=num_workers)
-        test_dataset_raw = load_dataset("codeparrot/github-jupyter-code-to-text", split="test", token=token, streaming = True, num_workers=num_workers)
+        dataset_train_raw = load_dataset("codeparrot/github-jupyter-code-to-text", split="train", token=token, streaming = True)
+        test_dataset_raw = load_dataset("codeparrot/github-jupyter-code-to-text", split="test", token=token, streaming = True)
     print(time.time() - t0)
 
 
