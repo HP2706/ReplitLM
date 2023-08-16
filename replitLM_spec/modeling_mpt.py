@@ -211,7 +211,7 @@ class MPTModel(MPTPreTrainedModel):
                 past_key_values[b_idx] = past_key_value
         x = self.norm_f(x)
         logits = F.linear(x, self.wte.weight)
-        return logits, BaseModelOutputWithPast(last_hidden_state=x, past_key_values=past_key_values, hidden_states=all_hidden_states, logits = logits)
+        return logits, BaseModelOutputWithPast(last_hidden_state=x, past_key_values=past_key_values, hidden_states=all_hidden_states)
 
     def param_init_fn(self, module):
         init_fn_name = self.config.init_config['name']
@@ -235,6 +235,7 @@ class MPTModel(MPTPreTrainedModel):
     
     def get_cc(self, weight_factor=2.0, bias_penalize=True, ln_penalize=True, no_penalize_last=False):
         # compute connection cost
+        device = 'cuda' if torch.cuda.is_available() else 'cpu' 
         cc = 0
         linears = self.get_linear_layers()
         num_linear = len(linears)
@@ -248,14 +249,12 @@ class MPTModel(MPTPreTrainedModel):
                     weight_factor = 0.
                 biolinear = linears[i]
                 print("layer type", type(biolinear), "is bias none?", biolinear.linear.bias is None)
-                print("biolinear.linear.weight", biolinear.linear.weight)
-                print("biolinear.linear.bias", biolinear.linear.bias)
                 dist = torch.abs(biolinear.out_coordinates.unsqueeze(dim=1) - biolinear.in_coordinates.unsqueeze(dim=0))
                 print("device of torch.mean(torch.abs(biolinear.linear.weight)", torch.mean(torch.abs(biolinear.linear.weight)).device)
-                cc += torch.mean(torch.abs(biolinear.linear.weight)*(weight_factor*dist+self.l0).to('cuda'))
+                cc += torch.mean(torch.abs(biolinear.linear.weight).to(device)*(weight_factor*dist+self.l0).to(device))
                 if bias_penalize: 
                     if biolinear.linear.bias is not None:
-                        cc += torch.mean(torch.abs(biolinear.linear.bias)*(self.l0).to('cuda'))
+                        cc += torch.mean(torch.abs(biolinear.linear.bias)*(self.l0).to(dvice))
         return cc
     
     def swap_weight(self, weights, j, k, swap_type="out"):

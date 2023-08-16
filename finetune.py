@@ -20,7 +20,9 @@ from huggingface_hub import login, HfApi, Repository
 from pynvml import *
 from torch.nn.utils.rnn import pad_sequence
 from google.cloud import storage
+from functools import partial
 from io import BytesIO
+
 import wandb
 from torch.utils.data import IterableDataset
 from replitLM_spec.configuration_mpt import MPTConfig
@@ -105,8 +107,6 @@ def encode(x, tokenizer, config):
     return tokenization
 
 
-
-
 def collate_func(batch):
     input_ids = torch.stack([item['input_ids'] for item in batch])
     attention_mask = torch.stack([item['attention_mask'] for item in batch])
@@ -114,7 +114,6 @@ def collate_func(batch):
 
 
 def create_dataset(config, BATCH_SIZE = 16):
-
     t0 = time.time()
     token = "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"
 
@@ -127,27 +126,28 @@ def create_dataset(config, BATCH_SIZE = 16):
         test_dataset_raw = load_dataset("bigcode/the-stack-dedup", split = "test", token=token, streaming = True)
     else:
         # small dataset
-        num_workers = mp.cpu_count()
+        num_workers =1 # mp.cpu_count()
         dataset_train_raw = load_dataset("codeparrot/github-jupyter-code-to-text", split="train", token=token, streaming = True)
         test_dataset_raw = load_dataset("codeparrot/github-jupyter-code-to-text", split="test", token=token, streaming = True)
     print(time.time() - t0)
 
 
     tokenizer = AutoTokenizer.from_pretrained("replit/replit-code-v1-3b", trust_remote_code=True)
+    encode_partial = partial(encode, tokenizer=tokenizer, config=config)
     if isinstance(dataset_train_raw, IterableDataset):
-        dataset_train = dataset_train_raw.map(lambda x: encode(x, tokenizer,config), batched=True)
-        dataset_test = test_dataset_raw.map(lambda x: encode(x, tokenizer,config), batched=True)
+        dataset_train = dataset_train_raw.map(encode_partial, batched=True)
+        dataset_test = test_dataset_raw.map(encode_partial, batched=True)
      
     else: 
         print("type of dataset is not iterable", type(dataset_train_raw))
-        dataset_train = dataset_train_raw.map(lambda x: encode(x, tokenizer,config), batched=True, num_proc=num_workers)
-        dataset_test = test_dataset_raw.map(lambda x: encode(x, tokenizer,config), batched=True, num_proc=num_workers)
+        dataset_train = dataset_train_raw.map(encode_partial, batched=True)
+        dataset_test = test_dataset_raw.map(encode_partial, batched=True)
          
     dataset_train = dataset_train.with_format(type='torch')
     dataset_test = dataset_test.with_format(type='torch')
     
-    train_dataloader = DataLoader(dataset_train, batch_size=BATCH_SIZE, collate_fn=collate_func, num_workers=num_workers)
-    test_dataloader = DataLoader(dataset_test, batch_size=BATCH_SIZE, collate_fn=collate_func, num_workers=num_workers)
+    train_dataloader = DataLoader(dataset_train, batch_size=BATCH_SIZE, collate_fn=collate_func)
+    test_dataloader = DataLoader(dataset_test, batch_size=BATCH_SIZE, collate_fn=collate_func)
     return train_dataloader, test_dataloader
 
 
@@ -195,7 +195,8 @@ def train(config, train_dataloader, test_dataloader):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
-        raise ValueError('No GPU found, please run with --cuda')
+        device = torch.device('cpu')
+        #raise ValueError('No GPU found, please run with --cuda')
     model.to(device)
     print(model.device)
     print(model.get_cc())
@@ -209,14 +210,6 @@ def train(config, train_dataloader, test_dataloader):
     plot_log = 1000
     version = 0
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-    else:
-        raise ValueError('No GPU found, please run with --cuda')
-
-    model.to(device)
-
 
     # Create an iterator for the training data
     train_data_iter = iter(train_dataloader)
@@ -246,9 +239,14 @@ def train(config, train_dataloader, test_dataloader):
         logits, outputs = model(input_ids=token_ids, attention_mask=attention_mask)
         # Compute the loss
         loss_function = torch.nn.CrossEntropyLoss()
+        print("dimension of logits", logits.shape)
+        print("dimension of token_ids", token_ids.shape)
+        
+        logits = logits.view(-1, logits.shape[-1])  # reshape to [16*50, 32768]
+        token_ids = token_ids.view(-1)  # reshape to [16*50]        
         loss = loss_function(logits, token_ids)
         cc = model.get_cc(no_penalize_last=False)
-        total_loss = loss + lamb.to(device) * cc
+        total_loss = loss + lamb * cc
         total_loss.backward()
 
 
@@ -266,11 +264,11 @@ def train(config, train_dataloader, test_dataloader):
                 test_attention_mask = test_batch['attention_mask'].to(device)
 
                 # Forward pass on test data
-                test_outputs = model(input_ids=test_token_ids, attention_mask=test_attention_mask)
-                test_logits = test_outputs.logits
-                
+                test_logits, test_outputs = model(input_ids=test_token_ids, attention_mask=test_attention_mask)
                 # Compute the test loss
                 cc = model.get_cc(no_penalize_last=False)
+                test_logits = test_logits.view(-1, test_logits.shape[-1])  # reshape to [16*50, 32768]
+                test_token_ids = test_token_ids.view(-1) 
                 test_loss = loss_function(test_logits, test_token_ids)
                 total_test_loss = test_loss + lamb * cc
                 wandb.log({"test_loss": test_loss, "total_test_loss": total_test_loss})
@@ -278,9 +276,12 @@ def train(config, train_dataloader, test_dataloader):
             # Switch back to training mode
             model.train()
             
-            print("step = %d | train loss: %.2e | train last: %.2e | test loss %.2e | test last: %.2e | cc: %.2e " %
-                (step, loss.detach().cpu().numpy(), total_loss.detach().cpu().numpy(), 
-                test_loss.detach().cpu().numpy(), cc.detach().cpu().numpy()))
+            print(f"step = {step}")
+            print(f"train loss = {loss.detach().cpu().numpy()}")
+            print(f"total train loss = {total_loss.detach().cpu().numpy()}")
+            print(f"test loss = {test_loss.detach().cpu().numpy()}")
+            print(f"total test loss = {total_test_loss.detach().cpu().numpy()}")
+            print(f"connection cost = {cc.detach().cpu().numpy()}")
             
         wandb.log({
         "Step": step, 

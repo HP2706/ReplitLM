@@ -5,6 +5,9 @@
 *.bin
 *.pt
 *.model
-
+*.log
+*.cpython
+*.pyc
+*.yaml
 # VS Code
 .vscode
