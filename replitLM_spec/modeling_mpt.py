@@ -30,13 +30,12 @@ class MPTPreTrainedModel(PreTrainedModel):
 
 class MPTModel(MPTPreTrainedModel):
     def __init__(self, config: MPTConfig):
-        #config._validate_config()
+        config._validate_config()
         super().__init__(config)
         self.n_layers = config.n_layers
         self.in_dim = config.vocab_size
         self.out_dim = config.vocab_size
         self.n_embed = config.d_model
-        
         
         self.attn_impl = config.attn_config['attn_impl']
         self.prefix_lm = config.attn_config['prefix_lm']

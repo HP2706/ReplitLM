@@ -23,7 +23,7 @@ from google.cloud import storage
 from io import BytesIO
 import wandb
 from torch.utils.data import IterableDataset
-
+from replitLM_spec.configuration_mpt import MPTConfig
 
 
 
@@ -166,7 +166,28 @@ def train(config, train_dataloader, test_dataloader):
     )
 
     #model = MPTModel.from_pretrained("replit/replit-code-v1-3b")
-    model = MPTModel(config)
+    mpt_config = MPTConfig(
+        d_model=config['d_model'],
+        n_heads=config['n_heads'],
+        n_layers=config['n_layers'],
+        expansion_ratio=config['expansion_ratio'],
+        max_seq_len=config['max_seq_len'],
+        vocab_size=config['vocab_size'],
+        resid_pdrop=config['resid_pdrop'],
+        emb_pdrop=config['emb_pdrop'],
+        learned_pos_emb=config['learned_pos_emb'],
+        attn_config=config['attn_config'],
+        init_device=config['init_device'],
+        logit_scale=config['logit_scale'],
+        no_bias=config['no_bias'],
+        verbose=config['verbose'],
+        embedding_fraction=config['embedding_fraction'],
+        norm_type=config['norm_type'],
+        use_cache=config['use_cache'],
+        init_config=config['init_config']
+    )
+    
+    model = MPTModel(mpt_config)
 
     if torch.cuda.is_available():
         device = torch.device('cuda')
