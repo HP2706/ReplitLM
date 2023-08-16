@@ -104,6 +104,9 @@ def encode(x, tokenizer, config):
     # Tokenize the 'content'
     return tokenization
 
+
+
+
 def collate_func(batch):
     input_ids = torch.stack([item['input_ids'] for item in batch])
     attention_mask = torch.stack([item['attention_mask'] for item in batch])
@@ -132,13 +135,13 @@ def create_dataset(config, BATCH_SIZE = 16):
 
     tokenizer = AutoTokenizer.from_pretrained("replit/replit-code-v1-3b", trust_remote_code=True)
     if isinstance(dataset_train_raw, IterableDataset):
-        dataset_train = dataset_train_raw.map(encode(tokenizer = tokenizer, config = config), batched=True)
-        dataset_test = test_dataset_raw.map(encode(tokenizer = tokenizer, config = config), batched=True)
+        dataset_train = dataset_train_raw.map(lambda x: encode(x, tokenizer,config), batched=True)
+        dataset_test = test_dataset_raw.map(lambda x: encode(x, tokenizer,config), batched=True)
      
     else: 
         print("type of dataset is not iterable", type(dataset_train_raw))
-        dataset_train = dataset_train_raw.map(encode(tokenizer = tokenizer, config = config), batched=True, num_proc=num_workers)
-        dataset_test = test_dataset_raw.map(encode(tokenizer = tokenizer, config = config), batched=True, num_proc=num_workers)
+        dataset_train = dataset_train_raw.map(lambda x: encode(x, tokenizer,config), batched=True, num_proc=num_workers)
+        dataset_test = test_dataset_raw.map(lambda x: encode(x, tokenizer,config), batched=True, num_proc=num_workers)
          
     dataset_train = dataset_train.with_format(type='torch')
     dataset_test = dataset_test.with_format(type='torch')
