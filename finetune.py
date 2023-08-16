@@ -92,7 +92,7 @@ def gpu_utilization():
 
 #downloading dataset
 
-def encode(x):
+def encode(x, tokenizer):
     # Extract the 'content' field
     content = x['content']
     tokenization = tokenizer(content, padding=True, truncation=True, max_length=config.max_seq_len)
@@ -137,8 +137,8 @@ def create_dataset(config, BATCH_SIZE = 16):
      
     else: 
         print("type of dataset is not iterable", type(dataset_train_raw))
-        dataset_train = dataset_train_raw.map(encode, batched=True, num_proc=num_workers)
-        dataset_test = test_dataset_raw.map(encode, batched=True, num_proc=num_workers)
+        dataset_train = dataset_train_raw.map(encode(tokenizer), batched=True, num_proc=num_workers)
+        dataset_test = test_dataset_raw.map(encode(tokenizer), batched=True, num_proc=num_workers)
          
     dataset_train = dataset_train.with_format(type='torch')
     dataset_test = dataset_test.with_format(type='torch')
