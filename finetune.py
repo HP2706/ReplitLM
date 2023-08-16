@@ -198,7 +198,7 @@ for step in tqdm(range(steps)):
     total_loss = loss + lamb.to(device) * cc
     total_loss.backward()
 
-    wandb.log({"loss": loss, "total_loss": total_loss})
+
     # Update the parameters
     optimizer.step()
 
@@ -228,6 +228,14 @@ for step in tqdm(range(steps)):
         print("step = %d | train loss: %.2e | train last: %.2e | test loss %.2e | test last: %.2e | cc: %.2e " %
               (step, loss.detach().cpu().numpy(), total_loss.detach().cpu().numpy(), 
                test_loss.detach().cpu().numpy(), cc.detach().cpu().numpy()))
+        
+    wandb.log({
+    "Step": step, 
+    "Train Loss": loss.detach().cpu().numpy(), 
+    "Total Train Loss": total_loss.detach().cpu().numpy(), 
+    "Test Loss": test_loss.detach().cpu().numpy(), 
+    "Connection Cost": cc.detach().cpu().numpy()
+    })
 
     if (step+1) % swap_log == 0:
         model.relocate()
