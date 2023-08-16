@@ -256,7 +256,7 @@ class MPTModel(MPTPreTrainedModel):
                 cc += torch.mean(torch.abs(biolinear.linear.weight)*(weight_factor*dist+self.l0).to('cuda'))
                 if bias_penalize: 
                     if biolinear.linear.bias is not None:
-                        cc += torch.mean(torch.abs(biolinear.linear.bias)*(self.l0))
+                        cc += torch.mean(torch.abs(biolinear.linear.bias)*(self.l0).to('cuda'))
         return cc
     
     def swap_weight(self, weights, j, k, swap_type="out"):
