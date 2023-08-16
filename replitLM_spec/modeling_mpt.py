@@ -364,7 +364,6 @@ class MPTModel(MPTPreTrainedModel):
         return n_head
 
     def get_top_id_head(self, i, top_k=20):
-        
         score = 0.
         if i == self.res_swap[0]:
             for p in self.res_swap:
@@ -381,7 +380,6 @@ class MPTModel(MPTPreTrainedModel):
     
     
     def get_top_id_tail(self, i, top_k=20):
-        
         score = 0.
         if i == self.res_swap[0]:
             for p in self.res_swap:
@@ -394,7 +392,6 @@ class MPTModel(MPTPreTrainedModel):
         score_head = score.reshape(n_head, head_dim)
         
         top_id_tail = torch.flip(torch.argsort(score_head, dim=1),[1])[:top_k]
-        
         return top_id_tail # 2D
     
     

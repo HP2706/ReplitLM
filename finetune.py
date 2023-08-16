@@ -21,6 +21,7 @@ from pynvml import *
 from torch.nn.utils.rnn import pad_sequence
 from google.cloud import storage
 from io import BytesIO
+import wandb
 
 
 def upload_blob(model, destination_blob_name, bucket_name='replit-code-bucket'):
@@ -50,11 +51,8 @@ def upload_blob(model, destination_blob_name, bucket_name='replit-code-bucket'):
 
     print(f'Model uploaded to {destination_blob_name}.')
 
-
-
-
 def upload_huggingface(model, version:int):
-    login("API_TOKEN") # change this!
+    login(os.environ.get("HUGGINGFACE_API_KEY")) # change this!
     api = HfApi()
     with Repository("torch-model", clone_from="<user>/torch-model", token=True).commit(commit_message="My cool model :)"):
         torch.save(model.state_dict(), f"model_{version}.pt")
@@ -66,6 +64,8 @@ def print_gpu_utilization():
     print(f"GPU memory occupied: {info.used//1024**2} MB.")
 
 #!nvidia-smi
+
+
 
 
 #downloading dataset
@@ -102,7 +102,6 @@ def encode(x):
     # Tokenize the 'content'
     return tokenization
 
-
 dataset_train = dataset_train_raw.map(encode, batched=True, num_proc=num_workers)
 dataset_train = dataset_train.with_format(type='torch')
 dataset_test = test_dataset_raw.map(encode, batched=True, num_proc=num_workers)
@@ -114,11 +113,27 @@ def collate_func(batch):
     return {'input_ids': input_ids, 'attention_mask': attention_mask}
 
 
-BATCH_SIZE = 64
+BATCH_SIZE = 16
 
 train_dataloader = DataLoader(dataset_train, batch_size=BATCH_SIZE, collate_fn=collate_func, num_workers=num_workers)
 test_dataloader = DataLoader(dataset_test, batch_size=BATCH_SIZE, collate_fn=collate_func, num_workers=num_workers)
 # Load model directly
+
+
+wandb.init(
+    # set the wandb project where this run will be logged
+    project="bimt-pruning-replit-code-model",
+    
+    # track hyperparameters and run metadata
+    config={
+    "learning_rate": 1e-3,
+    "architecture": "transformer",
+    "dataset": dataset_name,
+    "epochs": 10,
+    }
+)
+
+
 print_gpu_utilization()
 model = MPTModel.from_pretrained("replit/replit-code-v1-3b")
 if torch.cuda.is_available():
@@ -130,8 +145,6 @@ print(model.device)
 print_gpu_utilization()
 print(model.get_cc())
 
-
-
 t0 = time.time()
 
 steps = int(1000)
@@ -139,7 +152,7 @@ log = 100
 lamb = 1e-3
 swap_log = int(1e6) #1000
 plot_log = 1000
-
+version = 0
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
 if torch.cuda.is_available():
@@ -148,6 +161,7 @@ else:
     raise ValueError('No GPU found, please run with --cuda')
 
 model.to(device)
+
 
 # Create an iterator for the training data
 train_data_iter = iter(train_dataloader)
@@ -181,9 +195,10 @@ for step in tqdm(range(steps)):
     loss_function = torch.nn.CrossEntropyLoss()
     loss = loss_function(logits, token_ids)
     cc = model.get_cc(no_penalize_last=False)
-    total_loss = loss + lamb * cc
+    total_loss = loss + lamb.to(device) * cc
     total_loss.backward()
 
+    wandb.log({"loss": loss, "total_loss": total_loss})
     # Update the parameters
     optimizer.step()
 
@@ -202,8 +217,11 @@ for step in tqdm(range(steps)):
             test_logits = test_outputs.logits
             
             # Compute the test loss
+            cc = model.get_cc(no_penalize_last=False)
             test_loss = loss_function(test_logits, test_token_ids)
-
+            total_test_loss = test_loss + lamb * cc
+            wandb.log({"test_loss": test_loss, "total_test_loss": total_test_loss})
+            
         # Switch back to training mode
         model.train()
         
@@ -213,6 +231,10 @@ for step in tqdm(range(steps)):
 
     if (step+1) % swap_log == 0:
         model.relocate()
+        
+    if steps% (steps/2):
+        upload_blob(model, f"replit/replit-code-v1-3b-sparse_{version}")
+        
 
 print("took in total: ", time.time() - t0)
 model.save_pretrained("replit/replit-code-v1-3b-sparse")
