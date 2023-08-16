@@ -248,9 +248,7 @@ class MPTModel(MPTPreTrainedModel):
                 if i == num_linear - 1 and no_penalize_last:
                     weight_factor = 0.
                 biolinear = linears[i]
-                print("layer type", type(biolinear), "is bias none?", biolinear.linear.bias is None)
                 dist = torch.abs(biolinear.out_coordinates.unsqueeze(dim=1) - biolinear.in_coordinates.unsqueeze(dim=0))
-                print("device of torch.mean(torch.abs(biolinear.linear.weight)", torch.mean(torch.abs(biolinear.linear.weight)).device)
                 cc += torch.mean(torch.abs(biolinear.linear.weight).to(device)*(weight_factor*dist+self.l0).to(device))
                 if bias_penalize: 
                     if biolinear.linear.bias is not None:

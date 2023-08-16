@@ -58,7 +58,6 @@ def upload_blob(model, destination_blob_name, bucket_name='replit-code-bucket'):
 
 def upload_huggingface(model, version:int):
     login(os.environ.get("HUGGINGFACE_API_KEY")) # change this!
-    api = HfApi()
     with Repository("torch-model", clone_from="<user>/torch-model", token=True).commit(commit_message="My cool model :)"):
         torch.save(model.state_dict(), f"model_{version}.pt")
 
@@ -111,6 +110,7 @@ def collate_func(batch):
     input_ids = torch.stack([item['input_ids'] for item in batch])
     attention_mask = torch.stack([item['attention_mask'] for item in batch])
     return {'input_ids': input_ids, 'attention_mask': attention_mask}
+
 
 
 def create_dataset(config, BATCH_SIZE = 16):
@@ -203,8 +203,8 @@ def train(config, train_dataloader, test_dataloader):
 
     t0 = time.time() 
 
-    steps = int(1000)
-    log = 100
+    steps = int(100)
+    log = 5
     lamb = 1e-3
     swap_log = int(1e6) #1000
     plot_log = 1000
@@ -239,8 +239,6 @@ def train(config, train_dataloader, test_dataloader):
         logits, outputs = model(input_ids=token_ids, attention_mask=attention_mask)
         # Compute the loss
         loss_function = torch.nn.CrossEntropyLoss()
-        print("dimension of logits", logits.shape)
-        print("dimension of token_ids", token_ids.shape)
         
         logits = logits.view(-1, logits.shape[-1])  # reshape to [16*50, 32768]
         token_ids = token_ids.view(-1)  # reshape to [16*50]        
@@ -282,6 +280,7 @@ def train(config, train_dataloader, test_dataloader):
             print(f"test loss = {test_loss.detach().cpu().numpy()}")
             print(f"total test loss = {total_test_loss.detach().cpu().numpy()}")
             print(f"connection cost = {cc.detach().cpu().numpy()}")
+            print("gpu_utilization", gpu_utilization())
             
         wandb.log({
         "Step": step, 
