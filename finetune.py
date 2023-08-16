@@ -22,6 +22,9 @@ from torch.nn.utils.rnn import pad_sequence
 from google.cloud import storage
 from io import BytesIO
 import wandb
+from torch.utils.data import IterableDataset
+
+
 
 
 def upload_blob(model, destination_blob_name, bucket_name='replit-code-bucket'):
@@ -128,7 +131,7 @@ def create_dataset(config, BATCH_SIZE = 16):
 
 
     tokenizer = AutoTokenizer.from_pretrained("replit/replit-code-v1-3b", trust_remote_code=True)
-    if type(dataset_train_raw) == IterableDataset:
+    if isinstance(dataset_train_raw, IterableDataset):
         dataset_train = dataset_train_raw.map(encode, batched=True, num_proc=num_workers)
         dataset_test = test_dataset_raw.map(encode, batched=True, num_proc=num_workers)
      
