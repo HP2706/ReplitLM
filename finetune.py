@@ -151,7 +151,7 @@ def create_dataset(config, BATCH_SIZE = 16):
 
 def train(config, train_dataloader, test_dataloader):
 
-    wandb.login(os.environ.get("WANDB_API_KEY"))
+    wandb.login(key = os.environ.get("WANDB_API_KEY"))
     wandb.init(
         # set the wandb project where this run will be logged
         project="bimt-pruning-replit-code-model",
