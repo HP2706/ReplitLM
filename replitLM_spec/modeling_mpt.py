@@ -210,7 +210,8 @@ class MPTModel(MPTPreTrainedModel):
             if past_key_values is not None:
                 past_key_values[b_idx] = past_key_value
         x = self.norm_f(x)
-        return BaseModelOutputWithPast(last_hidden_state=x, past_key_values=past_key_values, hidden_states=all_hidden_states)
+        logits = F.linear(x, self.wte.weight)
+        return BaseModelOutputWithPast(last_hidden_state=x, past_key_values=past_key_values, hidden_states=all_hidden_states, logits = logits)
 
     def param_init_fn(self, module):
         init_fn_name = self.config.init_config['name']
