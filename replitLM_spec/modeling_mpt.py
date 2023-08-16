@@ -29,7 +29,6 @@ class MPTPreTrainedModel(PreTrainedModel):
     _no_split_modules=["MPTBlock"]
 
 class MPTModel(MPTPreTrainedModel):
-
     def __init__(self, config: MPTConfig):
         config._validate_config()
         super().__init__(config)

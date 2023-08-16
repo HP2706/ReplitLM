@@ -57,43 +57,44 @@ def upload_huggingface(model, version:int):
     with Repository("torch-model", clone_from="<user>/torch-model", token=True).commit(commit_message="My cool model :)"):
         torch.save(model.state_dict(), f"model_{version}.pt")
 
-def print_gpu_utilization():
+def gpu_utilization():
+    """Get the current gpu memory usage.
+    
+    Returns:
+        dict: The keys are 'used_memory (MiB)', 'total_memory (MiB)', and 'utilization (%)'.
+    """
+    # Initialize NVML
     nvmlInit()
+    
+    # Get GPU handle
     handle = nvmlDeviceGetHandleByIndex(0)
+    
+    # Get GPU memory info
     info = nvmlDeviceGetMemoryInfo(handle)
-    print(f"GPU memory occupied: {info.used//1024**2} MB.")
-
+    
+    # Calculate the memory usage percentage
+    utilization = (info.used / info.total) * 100
+    
+    # Shutdown the NVML
+    nvmlShutdown()
+    
+    # Return the memory info in a dictionary
+    return {
+        'used_memory (MiB)': info.used // 1024**2,
+        'total_memory (MiB)': info.total // 1024**2,
+        'utilization (%)': utilization
+    }
 #!nvidia-smi
 
 
-
-
+with open('replitLM_spec/config2.json', 'r') as f:
+    config = json.load(f)
 #downloading dataset
-
-t0 = time.time()
-token = "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"
-
-dataset_name = "codeparrot/github-jupyter-code-to-text"
-
-if dataset_name == "bigcode/the-stack-dedup":
-    # full dataset (3TB of data)
-    num_workers = 1
-    dataset_train_raw = load_dataset("bigcode/the-stack-dedup", split = "train", token=token, streaming = True)
-    test_dataset_raw = load_dataset("bigcode/the-stack-dedup", split = "test", token=token, streaming = True)
-else:
-    # small dataset
-    num_workers = mp.cpu_count()
-    dataset_train_raw = load_dataset("codeparrot/github-jupyter-code-to-text", split="train", token=token, streaming = True, num_workers=num_workers)
-    test_dataset_raw = load_dataset("codeparrot/github-jupyter-code-to-text", split="test", token=token, streaming = True, num_workers=num_workers)
-print(time.time() - t0)
-
-
-tokenizer = AutoTokenizer.from_pretrained("replit/replit-code-v1-3b", trust_remote_code=True)
 
 def encode(x):
     # Extract the 'content' field
     content = x['content']
-    tokenization = tokenizer(content, padding=True, truncation=True, max_length=2048)
+    tokenization = tokenizer(content, padding=True, truncation=True, max_length=config.max_seq_len)
     print("len", len(tokenization['input_ids']))
     if 'labels' in x:
         tokenization['labels'] = x['labels']
@@ -102,148 +103,169 @@ def encode(x):
     # Tokenize the 'content'
     return tokenization
 
-dataset_train = dataset_train_raw.map(encode, batched=True, num_proc=num_workers)
-dataset_train = dataset_train.with_format(type='torch')
-dataset_test = test_dataset_raw.map(encode, batched=True, num_proc=num_workers)
-dataset_test = dataset_test.with_format(type='torch')
-
 def collate_func(batch):
     input_ids = torch.stack([item['input_ids'] for item in batch])
     attention_mask = torch.stack([item['attention_mask'] for item in batch])
     return {'input_ids': input_ids, 'attention_mask': attention_mask}
 
 
-BATCH_SIZE = 16
+def create_dataset(config, BATCH_SIZE = 16):
 
-train_dataloader = DataLoader(dataset_train, batch_size=BATCH_SIZE, collate_fn=collate_func, num_workers=num_workers)
-test_dataloader = DataLoader(dataset_test, batch_size=BATCH_SIZE, collate_fn=collate_func, num_workers=num_workers)
-# Load model directly
+    t0 = time.time()
+    token = "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"
 
+    dataset_name = "codeparrot/github-jupyter-code-to-text"
 
-wandb.init(
-    # set the wandb project where this run will be logged
-    project="bimt-pruning-replit-code-model",
-    
-    # track hyperparameters and run metadata
-    config={
-    "learning_rate": 1e-3,
-    "architecture": "transformer",
-    "dataset": dataset_name,
-    "epochs": 10,
-    }
-)
-
-
-print_gpu_utilization()
-model = MPTModel.from_pretrained("replit/replit-code-v1-3b")
-if torch.cuda.is_available():
-    device = torch.device('cuda')
-else:
-    raise ValueError('No GPU found, please run with --cuda')
-model.to(device)
-print(model.device)
-print_gpu_utilization()
-print(model.get_cc())
-
-t0 = time.time()
-
-steps = int(1000)
-log = 100
-lamb = 1e-3
-swap_log = int(1e6) #1000
-plot_log = 1000
-version = 0
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
-if torch.cuda.is_available():
-    device = torch.device('cuda')
-else:
-    raise ValueError('No GPU found, please run with --cuda')
-
-model.to(device)
+    if dataset_name == "bigcode/the-stack-dedup":
+        # full dataset (3TB of data)
+        num_workers = 1
+        dataset_train_raw = load_dataset("bigcode/the-stack-dedup", split = "train", token=token, streaming = True)
+        test_dataset_raw = load_dataset("bigcode/the-stack-dedup", split = "test", token=token, streaming = True)
+    else:
+        # small dataset
+        num_workers = mp.cpu_count()
+        dataset_train_raw = load_dataset("codeparrot/github-jupyter-code-to-text", split="train", token=token, streaming = True, num_workers=num_workers)
+        test_dataset_raw = load_dataset("codeparrot/github-jupyter-code-to-text", split="test", token=token, streaming = True, num_workers=num_workers)
+    print(time.time() - t0)
 
 
-# Create an iterator for the training data
-train_data_iter = iter(train_dataloader)
-
-for step in tqdm(range(steps)):
-    if step == int(steps * 1 / 4):
-        lamb *= 10
-    if step == int(steps * 3 / 4):
-        lamb *= 10
-
-    # Get the next batch of training data
-    try:
-        batch = next(train_data_iter)
-    except StopIteration:
-        # If the iterator runs out of data (end of epoch), create a new iterator to restart from the beginning of the dataset
-        train_data_iter = iter(train_dataloader)
-        batch = next(train_data_iter)
-
-    # Move the batch to the GPU if available
-    token_ids = batch['input_ids'].to(device)
-    attention_mask = batch['attention_mask'].to(device)
-
-    # Zero the parameter gradients
-    optimizer.zero_grad()
-
-    # Forward pass
-    outputs = model(input_ids=token_ids, attention_mask=attention_mask)
-    logits = outputs.logits
-
-    # Compute the loss
-    loss_function = torch.nn.CrossEntropyLoss()
-    loss = loss_function(logits, token_ids)
-    cc = model.get_cc(no_penalize_last=False)
-    total_loss = loss + lamb.to(device) * cc
-    total_loss.backward()
+    tokenizer = AutoTokenizer.from_pretrained("replit/replit-code-v1-3b", trust_remote_code=True)
+    dataset_train = dataset_train_raw.map(encode, batched=True, num_proc=num_workers)
+    dataset_train = dataset_train.with_format(type='torch')
+    dataset_test = test_dataset_raw.map(encode, batched=True, num_proc=num_workers)
+    dataset_test = dataset_test.with_format(type='torch')
+    train_dataloader = DataLoader(dataset_train, batch_size=BATCH_SIZE, collate_fn=collate_func, num_workers=num_workers)
+    test_dataloader = DataLoader(dataset_test, batch_size=BATCH_SIZE, collate_fn=collate_func, num_workers=num_workers)
+    return train_dataloader, test_dataloader
 
 
-    # Update the parameters
-    optimizer.step()
 
-    # Compute the test loss, but not for every training step to save computation
-    if step % log == 0:
-        # Switch to evaluation mode for testing
-        model.eval()
-        with torch.no_grad():
-            # Assume test_dataloader is defined similarly to train_dataloader
-            test_batch = next(iter(test_dataloader))
-            test_token_ids = test_batch['input_ids'].to(device)
-            test_attention_mask = test_batch['attention_mask'].to(device)
+def train(config, train_dataloader, test_dataloader):
 
-            # Forward pass on test data
-            test_outputs = model(input_ids=test_token_ids, attention_mask=test_attention_mask)
-            test_logits = test_outputs.logits
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="bimt-pruning-replit-code-model",
+        
+        # track hyperparameters and run metadata
+        config={
+        "learning_rate": 1e-3,
+        "architecture": "transformer",
+        "dataset": "codeparrot/github-jupyter-code-to-text",
+        "epochs": 10,
+        }
+    )
+
+    #model = MPTModel.from_pretrained("replit/replit-code-v1-3b")
+    model = MPTModel(config)
+
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        raise ValueError('No GPU found, please run with --cuda')
+    model.to(device)
+    print(model.device)
+    print(model.get_cc())
+
+    t0 = time.time() 
+
+    steps = int(1000)
+    log = 100
+    lamb = 1e-3
+    swap_log = int(1e6) #1000
+    plot_log = 1000
+    version = 0
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        raise ValueError('No GPU found, please run with --cuda')
+
+    model.to(device)
+
+
+    # Create an iterator for the training data
+    train_data_iter = iter(train_dataloader)
+
+    for step in tqdm(range(steps)):
+        if step == int(steps * 1 / 4):
+            lamb *= 10
+        if step == int(steps * 3 / 4):
+            lamb *= 10
+
+        # Get the next batch of training data
+        try:
+            batch = next(train_data_iter)
+        except StopIteration:
+            # If the iterator runs out of data (end of epoch), create a new iterator to restart from the beginning of the dataset
+            train_data_iter = iter(train_dataloader)
+            batch = next(train_data_iter)
+
+        # Move the batch to the GPU if available
+        token_ids = batch['input_ids'].to(device)
+        attention_mask = batch['attention_mask'].to(device)
+
+        # Zero the parameter gradients
+        optimizer.zero_grad()
+
+        # Forward pass
+        outputs = model(input_ids=token_ids, attention_mask=attention_mask)
+        logits = outputs.logits
+
+        # Compute the loss
+        loss_function = torch.nn.CrossEntropyLoss()
+        loss = loss_function(logits, token_ids)
+        cc = model.get_cc(no_penalize_last=False)
+        total_loss = loss + lamb.to(device) * cc
+        total_loss.backward()
+
+
+        # Update the parameters
+        optimizer.step()
+
+        # Compute the test loss, but not for every training step to save computation
+        if step % log == 0:
+            # Switch to evaluation mode for testing
+            model.eval()
+            with torch.no_grad():
+                # Assume test_dataloader is defined similarly to train_dataloader
+                test_batch = next(iter(test_dataloader))
+                test_token_ids = test_batch['input_ids'].to(device)
+                test_attention_mask = test_batch['attention_mask'].to(device)
+
+                # Forward pass on test data
+                test_outputs = model(input_ids=test_token_ids, attention_mask=test_attention_mask)
+                test_logits = test_outputs.logits
+                
+                # Compute the test loss
+                cc = model.get_cc(no_penalize_last=False)
+                test_loss = loss_function(test_logits, test_token_ids)
+                total_test_loss = test_loss + lamb * cc
+                wandb.log({"test_loss": test_loss, "total_test_loss": total_test_loss})
+                
+            # Switch back to training mode
+            model.train()
             
-            # Compute the test loss
-            cc = model.get_cc(no_penalize_last=False)
-            test_loss = loss_function(test_logits, test_token_ids)
-            total_test_loss = test_loss + lamb * cc
-            wandb.log({"test_loss": test_loss, "total_test_loss": total_test_loss})
+            print("step = %d | train loss: %.2e | train last: %.2e | test loss %.2e | test last: %.2e | cc: %.2e " %
+                (step, loss.detach().cpu().numpy(), total_loss.detach().cpu().numpy(), 
+                test_loss.detach().cpu().numpy(), cc.detach().cpu().numpy()))
             
-        # Switch back to training mode
-        model.train()
-        
-        print("step = %d | train loss: %.2e | train last: %.2e | test loss %.2e | test last: %.2e | cc: %.2e " %
-              (step, loss.detach().cpu().numpy(), total_loss.detach().cpu().numpy(), 
-               test_loss.detach().cpu().numpy(), cc.detach().cpu().numpy()))
-        
-    wandb.log({
-    "Step": step, 
-    "Train Loss": loss.detach().cpu().numpy(), 
-    "Total Train Loss": total_loss.detach().cpu().numpy(), 
-    "Test Loss": test_loss.detach().cpu().numpy(), 
-    "Connection Cost": cc.detach().cpu().numpy()
-    })
+        wandb.log({
+        "Step": step, 
+        "Train Loss": loss.detach().cpu().numpy(), 
+        "Total Train Loss": total_loss.detach().cpu().numpy(), 
+        "Test Loss": test_loss.detach().cpu().numpy() , 
+        "Connection Cost": cc.detach().cpu().numpy(),
+        "gpu_utilization": gpu_utilization(),
+        })
 
-    if (step+1) % swap_log == 0:
-        model.relocate()
-        
-    if steps% (steps/2):
-        upload_blob(model, f"replit/replit-code-v1-3b-sparse_{version}")
-        
+        if (step+1) % swap_log == 0:
+            model.relocate()
+            
+        if steps% (steps/2):
+            upload_blob(model, f"replit/replit-code-v1-3b-sparse_{version}")
+            
 
-print("took in total: ", time.time() - t0)
-model.save_pretrained("replit/replit-code-v1-3b-sparse")
+    print("took in total: ", time.time() - t0)
+    model.save_pretrained("replit/replit-code-v1-3b-sparse")
 

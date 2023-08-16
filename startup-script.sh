@@ -5,6 +5,4 @@ cd ReplitLM
 pip install -r requirements.txt
 
 huggingface-cli lfs-enable-largefiles
-# Run the server
-python finetune.py
 

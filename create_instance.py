@@ -35,9 +35,7 @@ def create_instance(
     startup_script = open(
         os.path.join(os.path.dirname(__file__), "startup-script.sh")
     ).read()
-    image_url = "http://storage.googleapis.com/gce-demo-input/photo.jpg"
-    image_caption = "Ready for dessert?"
-
+    
     config = {
         "name": name,
         "machineType": machine_type,
@@ -85,8 +83,6 @@ def create_instance(
                     "key": "startup-script",
                     "value": startup_script,
                 },
-                {"key": "url", "value": image_url},
-                {"key": "text", "value": image_caption},
                 {"key": "bucket", "value": bucket},
             ]
         },
