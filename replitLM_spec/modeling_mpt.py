@@ -96,6 +96,48 @@ class MPTModel(MPTPreTrainedModel):
 
     def set_input_embeddings(self, value):
         self.wte = value
+            
+    
+    def calculate_sparsity(self):
+        non_zero_count = 0
+        total_params = 0
+
+        # Loop over the blocks (layers)
+        for block in self.blocks:
+            for param in block.parameters():
+                non_zero_count += torch.sum(param != 0).item()
+                total_params += param.numel()
+
+        # Loop over other model components if needed, e.g., embeddings, LayerNorm, etc.
+        for param in self.wte.parameters():
+            non_zero_count += torch.sum(param != 0).item()
+            total_params += param.numel()
+        
+        if not self.alibi:
+            for param in self.wpe.parameters():
+                non_zero_count += torch.sum(param != 0).item()
+                total_params += param.numel()
+
+        for param in self.emb_drop.parameters():
+            non_zero_count += torch.sum(param != 0).item()
+            total_params += param.numel()
+
+        for param in self.ln_f.parameters():
+            non_zero_count += torch.sum(param != 0).item()
+            total_params += param.numel()
+
+        for param in self.norm_f.parameters():
+            non_zero_count += torch.sum(param != 0).item()
+            total_params += param.numel()
+
+        # Calculate the sparsity factor
+        sparsity_factor = 1 - (non_zero_count / total_params)
+
+        print(f"Non-zero parameters: {non_zero_count}")
+        print(f"Total parameters: {total_params}")
+        print(f"Sparsity Factor: {sparsity_factor}")
+        return sparsity_factor, non_zero_count, total_params
+
 
     @torch.no_grad()
     def _attn_bias(self, device, dtype, attention_mask: Optional[torch.ByteTensor]=None, prefix_mask: Optional[torch.ByteTensor]=None, sequence_id: Optional[torch.LongTensor]=None):
@@ -222,16 +264,14 @@ class MPTModel(MPTPreTrainedModel):
         return isinstance(module, MPTBlock)
 
     def activation_checkpointing_fn(self, module):
-        return isinstance(module, MPTBlock)
-    
+        return isinstance(module, MPTBlock)    
     
     def get_linear_layers(self):
         linear_list = []
         for i in range(self.n_layers -1):
             linear_list = [*linear_list, *self.blocks[i].get_linear_layers()]
         linear_list.append(self.ln_f)
-        return linear_list
-    
+        return linear_list    
     
     def get_cc(self, weight_factor=2.0, bias_penalize=True, ln_penalize=True, no_penalize_last=False):
         # compute connection cost

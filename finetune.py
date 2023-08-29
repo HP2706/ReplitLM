@@ -13,7 +13,6 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import torch.nn.functional as F
-from replitLM_spec.modeling_mpt import MPTModel
 from transformers import DataCollatorForLanguageModeling
 import multiprocessing as mp
 from huggingface_hub import login, HfApi, Repository
@@ -25,7 +24,7 @@ from io import BytesIO
 import wandb
 from torch.utils.data import IterableDataset
 from replitLM_spec.configuration_mpt import MPTConfig
-
+from replitLM_spec.modeling_mpt import MPTModel
 
 
 def upload_blob(model, destination_blob_name, bucket_name='replit-code-bucket'):
@@ -111,7 +110,6 @@ def collate_func(batch):
     return {'input_ids': input_ids, 'attention_mask': attention_mask}
 
 
-
 def create_dataset(config, BATCH_SIZE = 16):
     t0 = time.time()
     token = "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"
@@ -149,8 +147,6 @@ def create_dataset(config, BATCH_SIZE = 16):
     test_dataloader = DataLoader(dataset_test, batch_size=BATCH_SIZE, collate_fn=collate_func)
     return train_dataloader, test_dataloader
 
-
-
 def train(config, train_dataloader, test_dataloader):
 
     wandb.login(key = os.environ.get("WANDB_API_KEY"))
@@ -167,7 +163,6 @@ def train(config, train_dataloader, test_dataloader):
         }
     )
 
-    #model = MPTModel.from_pretrained("replit/replit-code-v1-3b")
     mpt_config = MPTConfig(
         d_model=config['d_model'],
         n_heads=config['n_heads'],
@@ -189,7 +184,8 @@ def train(config, train_dataloader, test_dataloader):
         init_config=config['init_config']
     )
     
-    model = MPTModel(mpt_config)
+    #model = MPTModel(mpt_config)
+    model = MPTModel.from_pretrained("replit/replit-code-v1-3b")
 
     if torch.cuda.is_available():
         n_gpu = torch.cuda.device_count()
@@ -243,14 +239,13 @@ def train(config, train_dataloader, test_dataloader):
         logits, outputs = model(input_ids=token_ids, attention_mask=attention_mask)
         # Compute the loss
         loss_function = torch.nn.CrossEntropyLoss()
-        
+                
         logits = logits.view(-1, logits.shape[-1])  # reshape to [16*50, 32768]
         token_ids = token_ids.view(-1)  # reshape to [16*50]        
         loss = loss_function(logits, token_ids)
         cc = model.get_cc(no_penalize_last=False)
         total_loss = loss + lamb * cc
         total_loss.backward()
-
 
         # Update the parameters
         optimizer.step()
