@@ -102,32 +102,33 @@ class MPTModel(MPTPreTrainedModel):
         non_zero_count = 0
         total_params = 0
 
+        epsilon = 1e-9
         # Loop over the blocks (layers)
         for block in self.blocks:
             for param in block.parameters():
-                non_zero_count += torch.sum(param != 0).item()
+                non_zero_count += torch.sum(torch.abs(param) > epsilon).item()
                 total_params += param.numel()
 
         # Loop over other model components if needed, e.g., embeddings, LayerNorm, etc.
         for param in self.wte.parameters():
-            non_zero_count += torch.sum(param != 0).item()
+            non_zero_count += torch.sum(torch.abs(param) > epsilon).item()
             total_params += param.numel()
         
         if not self.alibi:
             for param in self.wpe.parameters():
-                non_zero_count += torch.sum(param != 0).item()
+                non_zero_count += torch.sum(torch.abs(param) > epsilon).item()
                 total_params += param.numel()
 
         for param in self.emb_drop.parameters():
-            non_zero_count += torch.sum(param != 0).item()
+            non_zero_count += torch.sum(torch.abs(param) > epsilon).item()
             total_params += param.numel()
 
         for param in self.ln_f.parameters():
-            non_zero_count += torch.sum(param != 0).item()
+            non_zero_count += torch.sum(torch.abs(param) > epsilon).item()
             total_params += param.numel()
 
         for param in self.norm_f.parameters():
-            non_zero_count += torch.sum(param != 0).item()
+            non_zero_count += torch.sum(torch.abs(param) > epsilon).item()
             total_params += param.numel()
 
         # Calculate the sparsity factor
