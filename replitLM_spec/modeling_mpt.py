@@ -384,6 +384,8 @@ class MPTModel(MPTPreTrainedModel):
             pass
         else:
             fold2 = right.in_fold
+            print("right.linear.weight.shape", right.linear.weight.shape)
+            print("fold2", fold2)
             score += torch.mean(torch.sum(torch.abs(right.linear.weight), dim=0).reshape(fold2, int(right.linear.weight.shape[1]/fold2)), dim=0)
             
         return score
