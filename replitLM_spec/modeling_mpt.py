@@ -56,7 +56,7 @@ class MPTModel(MPTPreTrainedModel):
         #for bimt training
         self.ln_f = nn.LayerNorm(self.n_embed)
         self.l_i = self.get_linear_layers()[0]
-        self.l_f = self.get_linear_layers()[-2]
+        self.l_f = self.get_linear_layers()[-2] #the de_embedding layer
         
         # parameters for the bio-inspired trick
         self.l0 = 0.5 # distance between two nearby layers
@@ -67,8 +67,7 @@ class MPTModel(MPTPreTrainedModel):
         self.res_swap = list(np.arange(2*self.n_layers+1)*3+1)
         self.skip_swap = list(np.arange(2*self.n_layers+1)*3+2)
         self.normal_swap = list(np.arange(2*self.n_layers+2)*3)
-        
-        print("type of self.blocks", type(self.blocks))
+   
         self.norm_f = norm_class(config.d_model, device=config.init_device)
         if config.init_device != 'meta':
             print(f'You are using config.init_device={config.init_device!r}, but you can also use config.init_device="meta" with Composer + FSDP for fast initialization.')
@@ -95,8 +94,7 @@ class MPTModel(MPTPreTrainedModel):
         return self.wte
 
     def set_input_embeddings(self, value):
-        self.wte = value
-            
+        self.wte = value            
     
     def calculate_sparsity(self):
         non_zero_count = 0
@@ -359,7 +357,6 @@ class MPTModel(MPTPreTrainedModel):
 
             
     def get_score(self, i):
-        
         linears = self.get_linear_layers()
         num_linear = len(linears)
         if i == 0:
@@ -530,9 +527,9 @@ class MPTModel(MPTPreTrainedModel):
         # Relocate neurons in the whole model
         linears = self.get_linear_layers()
         num_linear = len(linears)
-        for i in range(num_linear+1):
+        for i in range(num_linear-1):
             #print(i)
-            self.relocate_i(num_linear-i)
+            self.relocate_i(i)
     
     
 

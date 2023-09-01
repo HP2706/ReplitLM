@@ -203,11 +203,10 @@ def train(config, train_dataloader, test_dataloader):
 
     t0 = time.time() 
 
-    steps = int(100)
+    steps = int(10000)
     log = 5
     lamb = 1e-3
     swap_log = int(1e6) #1000
-    plot_log = 1000
     version = 0
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3*n_gpu)
 
@@ -281,6 +280,7 @@ def train(config, train_dataloader, test_dataloader):
             print(f"connection cost = {cc.detach().cpu().numpy()}")
             print("gpu_utilization", gpu_utilization())
             
+        sparsity , _ , _ = model.calculate_sparsity()
         wandb.log({
         "Step": step, 
         "Train Loss": loss.detach().cpu().numpy(), 
@@ -288,6 +288,7 @@ def train(config, train_dataloader, test_dataloader):
         "Test Loss": test_loss.detach().cpu().numpy() , 
         "Connection Cost": cc.detach().cpu().numpy(),
         "gpu_utilization": gpu_utilization(),
+        "sparsity": sparsity,
         })
 
         if (step+1) % swap_log == 0:
