@@ -444,6 +444,7 @@ class MPTModel(MPTPreTrainedModel):
         ccs = []
                 
         num_head = self.get_n_head(i)
+        
         head_dim = int(num_neuron/num_head)
         
         for k in range(num_head):
@@ -513,7 +514,7 @@ class MPTModel(MPTPreTrainedModel):
             
         # normal swap + the first res swap
         top_id_head = self.get_top_id_head(i, top_k=self.top_k)
-        for j in top_id_head:
+        for j in top_id_head.item():
             self.relocate_ij_head(i,j)
             
         top_id_tail = self.get_top_id_tail(i, top_k=self.top_k)
