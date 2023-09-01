@@ -373,19 +373,25 @@ class MPTModel(MPTPreTrainedModel):
             right = linears[i+1]
             
         # need to fold attention, fold = 3
+        
+        
+        
         score = 0.
         if left == None:
             pass
         else:
             fold = left.out_fold
+            print(f"fold2: {fold}")
+            print(f"right.linear.weight.shape: {left.linear.weight.shape}")
             score +=  torch.mean(torch.sum(torch.abs(left.linear.weight), dim=1).reshape(fold, int(left.linear.weight.shape[0]/fold)), dim=0)
             
         if right == None:
             pass
         else:
             fold2 = right.in_fold
-            print("right.linear.weight.shape", right.linear.weight.shape)
-            print("fold2", fold2)
+            print(f"fold2: {fold2}")
+            print(f"right.linear.weight.shape: {right.linear.weight.shape}")
+            print(f"score: {score}")
             score += torch.mean(torch.sum(torch.abs(right.linear.weight), dim=0).reshape(fold2, int(right.linear.weight.shape[1]/fold2)), dim=0)
             
         return score
