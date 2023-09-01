@@ -44,7 +44,5 @@ class MPTBlock(nn.Module):
     
     
     def get_linear_layers(self):
-        linear_layers = []
-        linear_layers.extend(self.attn.get_linear_layers())
-        linear_layers.extend(self.ffn.get_linear_layers())
+        linear_layers = [self.norm_1, *self.attn.get_linear_layers(), self.norm_2, *self.ffn.get_linear_layers()]
         return linear_layers

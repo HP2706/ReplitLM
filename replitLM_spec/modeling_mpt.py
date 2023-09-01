@@ -291,7 +291,7 @@ class MPTModel(MPTPreTrainedModel):
                 cc += torch.mean(torch.abs(biolinear.linear.weight).to(device)*(weight_factor*dist+self.l0).to(device))
                 if bias_penalize: 
                     if biolinear.linear.bias is not None:
-                        cc += torch.mean(torch.abs(biolinear.linear.bias)*(self.l0).to(dvice))
+                        cc += torch.mean(torch.abs(biolinear.linear.bias)*(self.l0).to(device))
         return cc
     
     def swap_weight(self, weights, j, k, swap_type="out"):
@@ -378,7 +378,6 @@ class MPTModel(MPTPreTrainedModel):
             pass
         else:
             fold = left.out_fold
-            print("left.linear.weight.shape", left.linear.weight.shape)
             score +=  torch.mean(torch.sum(torch.abs(left.linear.weight), dim=1).reshape(fold, int(left.linear.weight.shape[0]/fold)), dim=0)
             
         if right == None:
