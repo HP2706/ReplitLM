@@ -4,6 +4,7 @@ Inspired by https://github.com/karpathy/minGPT/blob/master/mingpt/model.py
 """
 import math
 import numpy as np
+from .norm import LPLayerNorm
 import warnings
 from typing import List, Optional, Tuple, Union
 import torch
@@ -54,7 +55,11 @@ class MPTModel(MPTPreTrainedModel):
         
         self.blocks = nn.ModuleList([MPTBlock(device=config.init_device, **config.to_dict()) for _ in range(config.n_layers)])
         #for bimt training
-        self.ln_f = nn.LayerNorm(self.n_embed)
+     
+        #change config back to low_precision_layernorm 
+        layernorm_class = LPLayerNorm if config.to_dict()['norm_type'] == "low_precision_layernorm" else nn.LayerNorm
+        
+        #self.ln_f = layernorm_class(self.n_embed)
         self.l_i = self.get_linear_layers()[1]
         self.l_f = self.get_linear_layers()[-2] #the de_embedding layer
     
@@ -119,10 +124,6 @@ class MPTModel(MPTPreTrainedModel):
                 total_params += param.numel()
 
         for param in self.emb_drop.parameters():
-            non_zero_count += torch.sum(torch.abs(param) > epsilon).item()
-            total_params += param.numel()
-
-        for param in self.ln_f.parameters():
             non_zero_count += torch.sum(torch.abs(param) > epsilon).item()
             total_params += param.numel()
 
@@ -270,7 +271,6 @@ class MPTModel(MPTPreTrainedModel):
         linear_list = []
         for i in range(self.n_layers -1):
             linear_list = [*linear_list, *self.blocks[i].get_linear_layers()]
-        linear_list.append(self.ln_f)
         return linear_list    
     
     def get_cc(self, weight_factor=2.0, bias_penalize=True, ln_penalize=True, no_penalize_last=False):
@@ -281,9 +281,8 @@ class MPTModel(MPTPreTrainedModel):
         num_linear = len(linears)
         for i in range(num_linear):
             layer = linears[i]
-            if isinstance(layer, nn.LayerNorm):
+            if isinstance(layer, nn.LayerNorm) or isinstance(layer, LPLayerNorm):
                 pass
-                #cc += torch.sum(torch.abs(layer.weight)) + torch.sum(torch.abs(layer.bias))
             else:
                 if i == num_linear - 1 and no_penalize_last:
                     weight_factor = 0.
@@ -331,30 +330,36 @@ class MPTModel(MPTPreTrainedModel):
         else:
             left = linears[i-1]
             right = linears[i]
+            
+        print(f"left: {type(left)}")    
+        print(f"right: {type(right)}")
         
-        if left != None:
-            fold = left.out_fold
-            fold_dim = int(left.linear.weight.shape[0]/fold)
-            for l in range(fold):
-                self.swap_weight(left.linear.weight, j+fold_dim*l, k+fold_dim*l, swap_type="out")
-                self.swap_bias(left.linear.bias, j+fold_dim*l, k+fold_dim*l)
+        
+        if left != None: 
+            if not isinstance(left, nn.LayerNorm) and not isinstance(left, LPLayerNorm):
+                print("left of type", type(left))
+                fold = left.out_fold
+                fold_dim = int(left.linear.weight.shape[0]/fold)
+                for l in range(fold):
+                    self.swap_weight(left.linear.weight, j+fold_dim*l, k+fold_dim*l, swap_type="out")
+                    self.swap_bias(left.linear.bias, j+fold_dim*l, k+fold_dim*l)
                 
-        if right != None:
-        
-            if i in self.normal_swap:
-                fold = right.in_fold
-                fold_dim = int(right.linear.weight.shape[1]/fold)
-                for l in range(fold):
-                    self.swap_weight(right.linear.weight, j+fold_dim*l, k+fold_dim*l, swap_type="in")
+        if right != None: 
+            if not isinstance(right, nn.LayerNorm) and not isinstance(right, LPLayerNorm):
+                print("right of type", type(right))
+                if i in self.normal_swap:
+                    fold = right.in_fold
+                    fold_dim = int(right.linear.weight.shape[1]/fold)
+                    for l in range(fold):
+                        self.swap_weight(right.linear.weight, j+fold_dim*l, k+fold_dim*l, swap_type="in")
 
-            if i in self.res_swap:
-                rightright = linears[i+1]
-                fold = rightright.in_fold
-                fold_dim = int(rightright.linear.weight.shape[1]/fold)
-                for l in range(fold):
-                    self.swap_bias(right.weight, j+fold_dim*l, k+fold_dim*l)
-                    self.swap_bias(right.bias, j+fold_dim*l, k+fold_dim*l)
-                    self.swap_weight(rightright.linear.weight, j+fold_dim*l, k+fold_dim*l, swap_type="in")
+                if i in self.res_swap:
+                    rightright = linears[i+1]
+                    fold = rightright.in_fold
+                    fold_dim = int(rightright.linear.weight.shape[1]/fold)
+                    for l in range(fold):
+                        self.swap_bias(right.bias, j+fold_dim*l, k+fold_dim*l)
+                        self.swap_weight(rightright.linear.weight, j+fold_dim*l, k+fold_dim*l, swap_type="in")
 
             
     def get_score(self, i):
@@ -369,18 +374,17 @@ class MPTModel(MPTPreTrainedModel):
         else:
             left = linears[i-1]
             right = linears[i]
+                    
         
-        if isinstance(right, nn.LayerNorm):
-            right = linears[i+1]
-            
         # need to fold attention, fold = 3
-        
-        
+               
         
         score = 0.
         if left == None:
             pass
         else:
+            if isinstance(left, nn.LayerNorm) or isinstance(left, LPLayerNorm):
+                left = linears[i-1]
             fold = left.out_fold
             print(f"fold2: {fold}")
             print(f"right.linear.weight.shape: {left.linear.weight.shape}")
@@ -389,6 +393,9 @@ class MPTModel(MPTPreTrainedModel):
         if right == None:
             pass
         else:
+            if isinstance(right, nn.LayerNorm) or isinstance(right, LPLayerNorm):
+                right = linears[i+1]
+            
             fold2 = right.in_fold
             print(f"fold2: {fold2}")
             print(f"right.linear.weight.shape: {right.linear.weight.shape}")
@@ -401,9 +408,19 @@ class MPTModel(MPTPreTrainedModel):
         linears = self.get_linear_layers()
         num_layer = len(linears)
         if i == 0:
-            n_head = linears[0].in_head
+            if isinstance(linears[i], nn.LayerNorm) or isinstance(linears[i], LPLayerNorm):
+                print("i=0, is norm")
+                n_head = linears[i+1].in_head
+            else:
+                print("i=0, is not norm")
+                n_head = linears[i].in_head
         else:
-            n_head = linears[i-1].out_head
+            if isinstance(linears[i-1], nn.LayerNorm) or isinstance(linears[i-1], LPLayerNorm):
+                print("i!=0, is norm")
+                n_head = linears[i].in_head
+            else:
+                print("i!=0, is not norm")
+                n_head = linears[i-1].out_head
         return n_head
 
     def get_top_id_head(self, i, top_k=20):
@@ -443,7 +460,7 @@ class MPTModel(MPTPreTrainedModel):
         linears = self.get_linear_layers()
         num_linear = len(linears)
         if i < num_linear:
-            if isinstance(linears[i], nn.LayerNorm):
+            if isinstance(linears[i], nn.LayerNorm) or isinstance(linears[i], LPLayerNorm):
                 num_neuron = int(linears[i+1].linear.weight.shape[1]/linears[i+1].in_fold)
             else:
                 num_neuron = int(linears[i].linear.weight.shape[1]/linears[i].in_fold)
@@ -476,7 +493,7 @@ class MPTModel(MPTPreTrainedModel):
         linears = self.get_linear_layers()
         num_linear = len(linears)
         if i < num_linear:
-            if isinstance(linears[i], nn.LayerNorm):
+            if isinstance(linears[i], nn.LayerNorm) or isinstance(linears[i], LPLayerNorm):
                 num_neuron = int(linears[i+1].linear.weight.shape[1]/linears[i+1].in_fold)
             else:
                 num_neuron = int(linears[i].linear.weight.shape[1]/linears[i].in_fold)
